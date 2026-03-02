@@ -19,6 +19,11 @@ export function buildSystemContext(params: {
 		channelName: string;
 		recentMessages: Array<{ userName: string; text: string }>;
 	};
+	groupContext?: {
+		groupName: string;
+		groupDescription?: string;
+		senderName: string;
+	};
 }): string {
 	const sections: string[] = [];
 
@@ -60,6 +65,18 @@ export function buildSystemContext(params: {
 			const formatted = params.channelContext.recentMessages.map((m) => `[${m.userName}]: ${m.text}`).join("\n");
 			sections.push("## Recent Channel Messages", formatted);
 		}
+	}
+
+	if (params.groupContext) {
+		const lines = [`## Context: WhatsApp Group "${params.groupContext.groupName}"`];
+		if (params.groupContext.groupDescription) {
+			lines.push(`Group description: ${params.groupContext.groupDescription}`);
+		}
+		lines.push(
+			"You are responding in a shared WhatsApp group. Multiple users share this workspace and can see your responses.",
+			"Address the user who mentioned you by name. Keep responses focused and concise.",
+		);
+		sections.push(...lines);
 	}
 
 	if (params.orgName || params.botName) {
@@ -110,11 +127,11 @@ export function buildSystemContext(params: {
 		"If the user asks what you remember, refer to their contents.",
 	);
 
-	if (params.channelContext) {
-		sections.push("Note: In this channel, the workspace CLAUDE.md is shared by all users.");
+	if (params.channelContext || params.groupContext) {
+		sections.push("Note: In this workspace, the CLAUDE.md is shared by all users.");
 	}
 
-	if (params.channelContext) {
+	if (params.channelContext || params.groupContext) {
 		sections.push("## Sent by", `Name: ${params.userName}`);
 	} else {
 		sections.push("## User", `Name: ${params.userName}`);

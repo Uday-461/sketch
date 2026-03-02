@@ -13,3 +13,10 @@ export async function ensureChannelWorkspace(config: Config, slackChannelId: str
 	await mkdir(workspaceDir, { recursive: true });
 	return workspaceDir;
 }
+
+export async function ensureGroupWorkspace(config: Config, groupJid: string): Promise<string> {
+	const groupId = groupJid.replace("@g.us", "");
+	const workspaceDir = join(config.DATA_DIR, "workspaces", `wa-group-${groupId}`);
+	await mkdir(workspaceDir, { recursive: true });
+	return workspaceDir;
+}

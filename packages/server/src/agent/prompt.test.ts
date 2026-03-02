@@ -216,6 +216,65 @@ describe("buildSystemContext", () => {
 		});
 	});
 
+	describe("group context", () => {
+		const result = buildSystemContext({
+			platform: "whatsapp",
+			userName: "Alice",
+			workspaceDir: "/data/workspaces/wa-group-123",
+			groupContext: {
+				groupName: "Engineering Team",
+				groupDescription: "Daily standups and discussions",
+				senderName: "Alice",
+			},
+		});
+
+		it("includes group name", () => {
+			expect(result).toContain('WhatsApp Group "Engineering Team"');
+		});
+
+		it("includes group description", () => {
+			expect(result).toContain("Group description: Daily standups and discussions");
+		});
+
+		it("includes shared workspace note", () => {
+			expect(result).toContain("Multiple users share this workspace");
+		});
+
+		it("uses Sent by instead of User", () => {
+			expect(result).toContain("## Sent by");
+			expect(result).toContain("Alice");
+			expect(result).not.toContain("## User");
+		});
+
+		it("includes shared memory note", () => {
+			expect(result).toContain("shared by all users");
+		});
+
+		it("includes WhatsApp formatting rules", () => {
+			expect(result).toContain("## Platform: WhatsApp");
+		});
+	});
+
+	describe("group context without description", () => {
+		const result = buildSystemContext({
+			platform: "whatsapp",
+			userName: "Bob",
+			workspaceDir: "/data/workspaces/wa-group-456",
+			groupContext: {
+				groupName: "Casual Chat",
+				senderName: "Bob",
+			},
+		});
+
+		it("includes group name", () => {
+			expect(result).toContain('WhatsApp Group "Casual Chat"');
+		});
+
+		it("does not include group description line", () => {
+			expect(result).not.toContain("Group description:");
+		});
+	});
+
 	describe("channel context with empty recent messages", () => {
 		const result = buildSystemContext({
 			platform: "slack",

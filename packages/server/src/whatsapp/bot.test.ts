@@ -3,7 +3,14 @@ import type { Kysely } from "kysely";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DB } from "../db/schema";
 import { createTestDb, createTestLogger } from "../test-utils";
-import { WhatsAppBot, extractText, hasMediaContent, jidToPhoneNumber } from "./bot";
+import {
+	WhatsAppBot,
+	extractContextInfo,
+	extractText,
+	hasMediaContent,
+	jidToPhoneNumber,
+	stripBotMention,
+} from "./bot";
 
 describe("extractText", () => {
 	it("returns text from conversation field", () => {
@@ -263,5 +270,138 @@ describe("WhatsAppBot.composing", () => {
 		// Should not throw
 		bot.startComposing("123@s.whatsapp.net");
 		bot.stopComposing("123@s.whatsapp.net");
+	});
+});
+
+describe("extractContextInfo", () => {
+	it("returns contextInfo from extendedTextMessage", () => {
+		const msg: proto.IMessage = {
+			extendedTextMessage: {
+				contextInfo: { mentionedJid: ["123@s.whatsapp.net"] },
+			},
+		};
+		const info = extractContextInfo(msg);
+		expect(info?.mentionedJid).toEqual(["123@s.whatsapp.net"]);
+	});
+
+	it("returns contextInfo from imageMessage", () => {
+		const msg: proto.IMessage = {
+			imageMessage: {
+				contextInfo: { mentionedJid: ["456@s.whatsapp.net"] },
+			},
+		};
+		const info = extractContextInfo(msg);
+		expect(info?.mentionedJid).toEqual(["456@s.whatsapp.net"]);
+	});
+
+	it("returns contextInfo from videoMessage", () => {
+		const msg: proto.IMessage = {
+			videoMessage: {
+				contextInfo: { mentionedJid: ["789@s.whatsapp.net"] },
+			},
+		};
+		const info = extractContextInfo(msg);
+		expect(info?.mentionedJid).toEqual(["789@s.whatsapp.net"]);
+	});
+
+	it("returns contextInfo from audioMessage", () => {
+		const msg: proto.IMessage = {
+			audioMessage: {
+				contextInfo: { participant: "bot@s.whatsapp.net" },
+			},
+		};
+		const info = extractContextInfo(msg);
+		expect(info?.participant).toBe("bot@s.whatsapp.net");
+	});
+
+	it("returns contextInfo from documentMessage", () => {
+		const msg: proto.IMessage = {
+			documentMessage: {
+				contextInfo: { mentionedJid: ["doc@s.whatsapp.net"] },
+			},
+		};
+		const info = extractContextInfo(msg);
+		expect(info?.mentionedJid).toEqual(["doc@s.whatsapp.net"]);
+	});
+
+	it("returns contextInfo from stickerMessage", () => {
+		const msg: proto.IMessage = {
+			stickerMessage: {
+				contextInfo: { participant: "sticker@s.whatsapp.net" },
+			},
+		};
+		const info = extractContextInfo(msg);
+		expect(info?.participant).toBe("sticker@s.whatsapp.net");
+	});
+
+	it("returns undefined for conversation-only message", () => {
+		const msg: proto.IMessage = { conversation: "hello" };
+		expect(extractContextInfo(msg)).toBeUndefined();
+	});
+
+	it("returns undefined when no contextInfo present", () => {
+		const msg: proto.IMessage = {
+			imageMessage: { url: "https://example.com/img.jpg" },
+		};
+		expect(extractContextInfo(msg)).toBeUndefined();
+	});
+
+	it("prioritizes extendedTextMessage over imageMessage", () => {
+		const msg: proto.IMessage = {
+			extendedTextMessage: {
+				contextInfo: { mentionedJid: ["text@s.whatsapp.net"] },
+			},
+			imageMessage: {
+				contextInfo: { mentionedJid: ["image@s.whatsapp.net"] },
+			},
+		};
+		const info = extractContextInfo(msg);
+		expect(info?.mentionedJid).toEqual(["text@s.whatsapp.net"]);
+	});
+});
+
+describe("stripBotMention", () => {
+	it("strips @BotName when bot name matches", () => {
+		expect(stripBotMention("@Sketch what's the weather?", "Sketch")).toBe("what's the weather?");
+	});
+
+	it("strips @BotName case-insensitively", () => {
+		expect(stripBotMention("@sketch hello", "Sketch")).toBe("hello");
+	});
+
+	it("strips @mention with zero-width characters", () => {
+		expect(stripBotMention("@\u200BSketch help me", "Sketch")).toBe("help me");
+	});
+
+	it("strips @mention at end of message", () => {
+		expect(stripBotMention("hey @Sketch", "Sketch")).toBe("hey");
+	});
+
+	it("collapses double spaces after stripping", () => {
+		expect(stripBotMention("hello @Sketch world", "Sketch")).toBe("hello world");
+	});
+
+	it("falls back to stripping first @token when no bot name", () => {
+		expect(stripBotMention("@Someone help", null)).toBe("help");
+	});
+
+	it("falls back when bot name doesn't match", () => {
+		expect(stripBotMention("@OtherBot hello", "Sketch")).toBe("hello");
+	});
+
+	it("handles message with only a mention", () => {
+		expect(stripBotMention("@Sketch", "Sketch")).toBe("");
+	});
+
+	it("escapes regex special chars in bot name", () => {
+		expect(stripBotMention("@Bot++ hello", "Bot++")).toBe("hello");
+	});
+
+	it("handles empty string", () => {
+		expect(stripBotMention("", "Sketch")).toBe("");
+	});
+
+	it("returns text unchanged when no @mention present", () => {
+		expect(stripBotMention("no mention here", "Sketch")).toBe("no mention here");
 	});
 });

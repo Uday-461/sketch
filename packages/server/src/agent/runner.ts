@@ -39,6 +39,11 @@ export interface RunAgentParams {
 		channelName: string;
 		recentMessages: Array<{ userName: string; text: string }>;
 	};
+	groupContext?: {
+		groupName: string;
+		groupDescription?: string;
+		senderName: string;
+	};
 }
 
 /**
@@ -78,6 +83,7 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
 		orgName: params.orgName,
 		botName: params.botName,
 		channelContext: params.channelContext,
+		groupContext: params.groupContext,
 	});
 
 	let sessionId = "";

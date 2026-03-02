@@ -3,16 +3,23 @@ import type { Boom } from "@hapi/boom";
  * WhatsApp adapter using Baileys — connection management, message handling,
  * reconnection with exponential backoff, composing indicators, echo detection.
  *
- * DMs only (messages from @s.whatsapp.net or @lid JIDs). Groups filtered out.
- * LID JIDs are resolved to phone numbers via Baileys' signalRepository.lidMapping.
+ * Supports DMs (@s.whatsapp.net, @lid) and groups (@g.us).
+ * Groups: mention-only activation (explicit @mention or reply-to-bot).
+ * LID JIDs resolved to phone numbers via Baileys' signalRepository.lidMapping.
  * Auth state persisted in DB via createDbAuthState.
+ * Group metadata cached in-memory (5-min TTL) and wired into cachedGroupMetadata
+ * socket config to avoid re-fetching participant lists on every sendMessage.
  */
 import {
 	DisconnectReason,
+	type GroupMetadata,
+	type MiscMessageGenerationOptions,
 	type WASocket,
 	type WAVersion,
+	areJidsSameUser,
 	fetchLatestBaileysVersion,
 	getContentType,
+	jidNormalizedUser,
 	makeWASocket,
 	type proto,
 } from "@whiskeysockets/baileys";
@@ -31,6 +38,7 @@ const RECONNECT_BASE_MS = 2000;
 const RECONNECT_MAX_MS = 30_000;
 const RECONNECT_FACTOR = 1.8;
 const RECONNECT_JITTER = 0.25;
+const GROUP_META_TTL_MS = 5 * 60_000;
 
 /** Cached WA version — fetched once from GitHub, reused for all subsequent connections. */
 let cachedVersion: WAVersion | null = null;
@@ -42,15 +50,27 @@ async function getWaVersion(): Promise<WAVersion | undefined> {
 	return version;
 }
 
-export interface WhatsAppMessage {
+interface WhatsAppBaseMessage {
 	text: string;
-	phoneNumber: string;
 	jid: string;
 	messageId: string;
 	pushName: string;
 	rawMessage: proto.IWebMessageInfo;
 	mediaType?: string;
 }
+
+export interface WhatsAppDmMessage extends WhatsAppBaseMessage {
+	type: "dm";
+	phoneNumber: string;
+}
+
+export interface WhatsAppGroupMessage extends WhatsAppBaseMessage {
+	type: "group";
+	isMentioned: boolean;
+	senderJid: string;
+}
+
+export type WhatsAppMessage = WhatsAppDmMessage | WhatsAppGroupMessage;
 
 export type WhatsAppMessageHandler = (message: WhatsAppMessage) => Promise<void>;
 
@@ -79,6 +99,7 @@ export class WhatsAppBot {
 		string,
 		{ interval: ReturnType<typeof setInterval>; ttl: ReturnType<typeof setTimeout> }
 	>();
+	private groupMetaCache = new Map<string, { meta: GroupMetadata; expires: number }>();
 
 	constructor(config: WhatsAppBotConfig) {
 		this.db = config.db;
@@ -254,11 +275,12 @@ export class WhatsAppBot {
 
 	// --- Sending ---
 
-	async sendText(jid: string, text: string): Promise<void> {
+	async sendText(jid: string, text: string, options?: MiscMessageGenerationOptions): Promise<void> {
 		if (!this.sock) return;
 		const chunks = chunkText(text);
-		for (const chunk of chunks) {
-			const sent = await this.sock.sendMessage(jid, { text: chunk });
+		for (let i = 0; i < chunks.length; i++) {
+			// Only apply options (e.g. quoted reply) to the first chunk
+			const sent = await this.sock.sendMessage(jid, { text: chunks[i] }, i === 0 ? options : undefined);
 			if (sent?.key?.id) this.trackSentMessage(sent.key.id);
 		}
 	}
@@ -308,6 +330,29 @@ export class WhatsAppBot {
 		this.sock?.sendPresenceUpdate("paused", jid).catch(() => {});
 	}
 
+	// --- Group metadata ---
+
+	async getGroupMetadata(groupJid: string): Promise<GroupMetadata | undefined> {
+		const cached = this.groupMetaCache.get(groupJid);
+		if (cached && cached.expires > Date.now()) return cached.meta;
+
+		try {
+			const meta = await this.sock?.groupMetadata(groupJid);
+			if (meta) {
+				this.groupMetaCache.set(groupJid, { meta, expires: Date.now() + GROUP_META_TTL_MS });
+			}
+			return meta;
+		} catch (err) {
+			this.logger.warn({ err, groupJid }, "Failed to fetch group metadata");
+			return undefined;
+		}
+	}
+
+	async getGroupName(groupJid: string): Promise<string> {
+		const meta = await this.getGroupMetadata(groupJid);
+		return meta?.subject ?? "Unknown Group";
+	}
+
 	// --- Internal ---
 
 	private async createSocket(): Promise<void> {
@@ -325,11 +370,17 @@ export class WhatsAppBot {
 			printQRInTerminal: false,
 			syncFullHistory: false,
 			markOnlineOnConnect: false,
+			cachedGroupMetadata: async (jid) => {
+				const cached = this.groupMetaCache.get(jid);
+				if (cached && cached.expires > Date.now()) return cached.meta;
+				return undefined;
+			},
 		});
 
 		this.sock.ev.on("creds.update", authState.saveCreds);
 		this.registerConnectionHandler(authState);
 		this.registerMessageHandler();
+		this.registerGroupEventHandlers();
 		this.startWatchdog();
 	}
 
@@ -375,10 +426,10 @@ export class WhatsAppBot {
 				const jid = msg.key.remoteJid;
 				if (!jid) continue;
 
-				// Accept DMs only — @s.whatsapp.net (standard) or @lid (Linked Identity)
 				const isStandardDm = jid.endsWith("@s.whatsapp.net");
 				const isLidDm = jid.endsWith("@lid");
-				if (!isStandardDm && !isLidDm) continue;
+				const isGroup = jid.endsWith("@g.us");
+				if (!isStandardDm && !isLidDm && !isGroup) continue;
 
 				if (msg.key.id && this.recentlySent.has(msg.key.id)) continue;
 
@@ -388,34 +439,142 @@ export class WhatsAppBot {
 
 				if (!text && !hasMedia) continue;
 
-				// Resolve phone number — standard JIDs have it directly, LID JIDs need mapping
-				let phoneNumber: string | null = null;
-				let replyJid = jid;
-
-				if (isStandardDm) {
-					phoneNumber = jidToPhoneNumber(jid);
+				if (isGroup) {
+					await this.handleGroupMessage(msg, jid, text, messageType, hasMedia);
 				} else {
-					phoneNumber = await this.resolveLidToPhone(jid);
-					if (!phoneNumber) {
-						this.logger.warn({ lid: jid }, "Could not resolve LID to phone number — dropping message");
-						continue;
-					}
-					// Reply to the LID JID directly — Baileys handles the routing
-					replyJid = jid;
+					await this.handleDmMessage(msg, jid, isStandardDm, text, messageType, hasMedia);
 				}
+			}
+		});
+	}
 
-				if (this.handler) {
-					this.lastMessageAt = Date.now();
-					await this.handler({
-						text: text ?? "",
-						phoneNumber,
-						jid: replyJid,
-						messageId: msg.key.id ?? "",
-						pushName: msg.pushName ?? "Unknown",
-						rawMessage: msg,
-						mediaType: hasMedia ? (messageType ?? undefined) : undefined,
-					});
+	private async handleDmMessage(
+		msg: proto.IWebMessageInfo,
+		jid: string,
+		isStandardDm: boolean,
+		text: string | null,
+		messageType: string | undefined,
+		hasMedia: boolean,
+	): Promise<void> {
+		let phoneNumber: string | null = null;
+
+		if (isStandardDm) {
+			phoneNumber = jidToPhoneNumber(jid);
+		} else {
+			phoneNumber = await this.resolveLidToPhone(jid);
+			if (!phoneNumber) {
+				this.logger.warn({ lid: jid }, "Could not resolve LID to phone number — dropping message");
+				return;
+			}
+		}
+
+		if (this.handler) {
+			this.lastMessageAt = Date.now();
+			await this.handler({
+				type: "dm",
+				text: text ?? "",
+				phoneNumber,
+				jid,
+				messageId: msg.key?.id ?? "",
+				pushName: msg.pushName ?? "Unknown",
+				rawMessage: msg,
+				mediaType: hasMedia ? (messageType ?? undefined) : undefined,
+			});
+		}
+	}
+
+	private async handleGroupMessage(
+		msg: proto.IWebMessageInfo,
+		groupJid: string,
+		text: string | null,
+		messageType: string | undefined,
+		hasMedia: boolean,
+	): Promise<void> {
+		const senderJid = msg.key?.participant;
+		if (!senderJid) return;
+
+		if (!msg.message) return;
+		const contextInfo = extractContextInfo(msg.message);
+		const isMentioned = this.isBotMentioned(contextInfo);
+
+		// Strip bot mention text from the message when explicitly mentioned
+		let cleanText = text;
+		if (cleanText && isMentioned && contextInfo?.mentionedJid?.length) {
+			cleanText = stripBotMention(cleanText, this.sock?.user?.name);
+		}
+
+		if (this.handler) {
+			this.lastMessageAt = Date.now();
+			await this.handler({
+				type: "group",
+				text: cleanText ?? "",
+				jid: groupJid,
+				messageId: msg.key?.id ?? "",
+				pushName: msg.pushName ?? "Unknown",
+				rawMessage: msg,
+				mediaType: hasMedia ? (messageType ?? undefined) : undefined,
+				isMentioned,
+				senderJid,
+			});
+		}
+	}
+
+	/**
+	 * Check if the bot is mentioned in a message — either explicitly via @mention
+	 * in mentionedJid, or implicitly by replying to a bot message.
+	 */
+	private isBotMentioned(contextInfo: proto.IContextInfo | undefined): boolean {
+		const botId = this.sock?.user?.id;
+		if (!botId) return false;
+
+		const botLid = this.sock?.user?.lid;
+
+		// Explicit @mention — check mentionedJid array
+		const mentionedJids = contextInfo?.mentionedJid;
+		if (mentionedJids?.length) {
+			const hasBotMention = mentionedJids.some(
+				(mentionJid) => areJidsSameUser(mentionJid, botId) || (botLid && areJidsSameUser(mentionJid, botLid)),
+			);
+			if (hasBotMention) return true;
+		}
+
+		// Implicit mention — reply to a bot message
+		const quotedParticipant = contextInfo?.participant;
+		if (quotedParticipant) {
+			if (areJidsSameUser(quotedParticipant, botId)) return true;
+			if (botLid && areJidsSameUser(quotedParticipant, botLid)) return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Refresh group metadata cache on group changes so cachedGroupMetadata
+	 * stays fresh and Baileys doesn't re-fetch on every sendMessage.
+	 */
+	private registerGroupEventHandlers(): void {
+		this.sock?.ev.on("groups.update", async (updates) => {
+			for (const update of updates) {
+				if (!update.id) continue;
+				try {
+					const meta = await this.sock?.groupMetadata(update.id);
+					if (meta) {
+						this.groupMetaCache.set(update.id, { meta, expires: Date.now() + GROUP_META_TTL_MS });
+					}
+				} catch {
+					// Non-critical — cache will refresh on next access
 				}
+			}
+		});
+
+		this.sock?.ev.on("group-participants.update", async (event) => {
+			try {
+				const meta = await this.sock?.groupMetadata(event.id);
+				if (meta) {
+					this.groupMetaCache.set(event.id, { meta, expires: Date.now() + GROUP_META_TTL_MS });
+				}
+			} catch {
+				// Non-critical — cache will refresh on next access
 			}
 		});
 	}
@@ -485,4 +644,40 @@ export function jidToPhoneNumber(jid: string): string {
 	const raw = jid.replace("@s.whatsapp.net", "").replace("@lid", "");
 	const number = raw.includes(":") ? raw.split(":")[0] : raw;
 	return `+${number}`;
+}
+
+/**
+ * Extract contextInfo from any message type — mentions and reply-to context
+ * can live on extendedTextMessage, imageMessage, videoMessage, etc.
+ */
+export function extractContextInfo(message: proto.IMessage): proto.IContextInfo | undefined {
+	return (
+		message.extendedTextMessage?.contextInfo ??
+		message.imageMessage?.contextInfo ??
+		message.videoMessage?.contextInfo ??
+		message.audioMessage?.contextInfo ??
+		message.documentMessage?.contextInfo ??
+		message.stickerMessage?.contextInfo ??
+		undefined
+	);
+}
+
+/**
+ * Strip the bot's @mention text from a message. WhatsApp renders mentions as
+ * @DisplayName in the text. We remove the first @-prefixed token that looks
+ * like a bot mention so the agent sees a clean message.
+ */
+export function stripBotMention(text: string, botName?: string | null): string {
+	if (botName) {
+		// Try exact match first: @BotName (possibly with unicode zero-width chars)
+		const escaped = botName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		const namePattern = new RegExp(`@[\\u200B-\\u200F\\uFEFF]*${escaped}\\b`, "i");
+		const stripped = text.replace(namePattern, "").trim();
+		if (stripped !== text) return stripped.replace(/\s{2,}/g, " ");
+	}
+	// Fallback: strip the first @mention token (WhatsApp inserts mention at the position)
+	return text
+		.replace(/@[\u200B-\u200F\uFEFF]*\S+/, "")
+		.trim()
+		.replace(/\s{2,}/g, " ");
 }

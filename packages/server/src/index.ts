@@ -4,7 +4,7 @@ import { applyLlmEnvFromSettings } from "./agent/llm-env";
 import { formatBufferedContext } from "./agent/prompt";
 import { runAgent } from "./agent/runner";
 import { getSessionId } from "./agent/sessions";
-import { ensureChannelWorkspace, ensureWorkspace } from "./agent/workspace";
+import { ensureChannelWorkspace, ensureGroupWorkspace, ensureWorkspace } from "./agent/workspace";
 import { loadConfig, validateConfig } from "./config";
 import { createDatabase } from "./db/index";
 import { runMigrations } from "./db/migrate";
@@ -23,6 +23,7 @@ import type { BufferedMessage } from "./slack/thread-buffer";
 import { ThreadBuffer } from "./slack/thread-buffer";
 import { UserCache } from "./slack/user-cache";
 import { WhatsAppBot } from "./whatsapp/bot";
+import { GroupBuffer } from "./whatsapp/group-buffer";
 import { createWhatsAppMessageHandler } from "./whatsapp/message-handler";
 
 // 1. Config
@@ -380,28 +381,114 @@ await startSlackBotIfConfigured().catch(() => {});
 // 8. WhatsApp bot — always instantiate, connect only if creds exist in DB
 const whatsapp = new WhatsAppBot({ db, logger });
 
+const groupBuffer = new GroupBuffer();
+
 whatsapp.onMessage(async (message) => {
-	// Resolve user BEFORE enqueue — needed for queue key and access control
-	const user = await users.findByWhatsappNumber(message.phoneNumber);
-	if (!user) {
-		await whatsapp.sendText(
-			message.jid,
-			"Sorry, you're not authorized to use this bot. Contact your admin to get access.",
-		);
+	if (message.type === "dm") {
+		// --- DM handler (existing logic) ---
+		const user = await users.findByWhatsappNumber(message.phoneNumber);
+		if (!user) {
+			await whatsapp.sendText(
+				message.jid,
+				"Sorry, you're not authorized to use this bot. Contact your admin to get access.",
+			);
+			return;
+		}
+
+		const queue = queueManager.getQueue(user.id);
+
+		queue.enqueue(async () => {
+			const workspaceDir = await ensureWorkspace(config, user.id);
+			const settingsRow = await settingsRepo.get();
+
+			whatsapp.startComposing(message.jid);
+
+			try {
+				const attachments: Attachment[] = [];
+				if (message.mediaType && whatsapp.socket) {
+					const attachDir = join(workspaceDir, "attachments");
+					try {
+						const attachment = await downloadWhatsAppMedia(
+							message.rawMessage,
+							whatsapp.socket,
+							attachDir,
+							config.MAX_FILE_SIZE_MB * 1024 * 1024,
+							logger,
+						);
+						attachments.push(attachment);
+					} catch (err) {
+						logger.warn({ err, mediaType: message.mediaType }, "Failed to download WhatsApp media");
+					}
+				}
+
+				const onMessage = createWhatsAppMessageHandler(whatsapp, message.jid);
+
+				const result = await runAgent({
+					userMessage: message.text || "See attached files.",
+					workspaceDir,
+					userName: user.name,
+					logger,
+					platform: "whatsapp",
+					onMessage,
+					orgName: settingsRow?.org_name,
+					botName: settingsRow?.bot_name,
+					attachments: attachments.length > 0 ? attachments : undefined,
+				});
+
+				for (const filePath of result.pendingUploads) {
+					try {
+						if (whatsapp.isConnected) {
+							const ext = filePath.split(".").pop() ?? "";
+							const mime = extensionToMime(ext);
+							await whatsapp.sendFile(message.jid, filePath, mime, basename(filePath));
+						}
+					} catch (err) {
+						logger.warn({ err, filePath }, "Failed to send file via WhatsApp");
+					}
+				}
+			} catch (err) {
+				logger.error({ err, userId: user.id }, "Agent run failed (WhatsApp)");
+				if (whatsapp.isConnected) {
+					await whatsapp.sendText(message.jid, "Something went wrong, try again.");
+				}
+			} finally {
+				whatsapp.stopComposing(message.jid);
+			}
+		});
 		return;
 	}
 
-	// Queue by user.id — same key as Slack DMs for cross-platform serialization
-	const queue = queueManager.getQueue(user.id);
+	// --- Group handler ---
+
+	if (!message.isMentioned) {
+		groupBuffer.append(message.jid, {
+			senderName: message.pushName,
+			text: message.text,
+			timestamp: Date.now(),
+		});
+		return;
+	}
+
+	const groupJid = message.jid;
+	const queue = queueManager.getQueue(`wa-group-${groupJid}`);
 
 	queue.enqueue(async () => {
-		const workspaceDir = await ensureWorkspace(config, user.id);
+		const workspaceDir = await ensureGroupWorkspace(config, groupJid);
 		const settingsRow = await settingsRepo.get();
+		const groupMeta = await whatsapp.getGroupMetadata(groupJid);
+		const groupName = groupMeta?.subject ?? "Unknown Group";
+		const groupDescription = groupMeta?.desc ?? undefined;
 
-		whatsapp.startComposing(message.jid);
+		whatsapp.startComposing(groupJid);
 
 		try {
-			// Download media if present
+			const buffered = groupBuffer.drain(groupJid);
+			const contextMessages: BufferedMessage[] = buffered.map((m) => ({
+				userName: m.senderName,
+				text: m.text,
+				ts: String(m.timestamp),
+			}));
+
 			const attachments: Attachment[] = [];
 			if (message.mediaType && whatsapp.socket) {
 				const attachDir = join(workspaceDir, "attachments");
@@ -419,39 +506,50 @@ whatsapp.onMessage(async (message) => {
 				}
 			}
 
-			const onMessage = createWhatsAppMessageHandler(whatsapp, message.jid);
+			const userMessage = formatBufferedContext(
+				contextMessages,
+				message.pushName,
+				message.text || "See attached files.",
+				"[Recent group messages since your last response]",
+			);
+
+			const onMessage = createWhatsAppMessageHandler(
+				whatsapp,
+				groupJid,
+				message.rawMessage as import("@whiskeysockets/baileys").WAMessage,
+			);
 
 			const result = await runAgent({
-				userMessage: message.text || "See attached files.",
+				userMessage,
 				workspaceDir,
-				userName: user.name,
+				userName: message.pushName,
 				logger,
 				platform: "whatsapp",
 				onMessage,
 				orgName: settingsRow?.org_name,
 				botName: settingsRow?.bot_name,
 				attachments: attachments.length > 0 ? attachments : undefined,
+				groupContext: { groupName, groupDescription, senderName: message.pushName },
 			});
 
-			// Upload pending files
 			for (const filePath of result.pendingUploads) {
 				try {
 					if (whatsapp.isConnected) {
 						const ext = filePath.split(".").pop() ?? "";
 						const mime = extensionToMime(ext);
-						await whatsapp.sendFile(message.jid, filePath, mime, basename(filePath));
+						await whatsapp.sendFile(groupJid, filePath, mime, basename(filePath));
 					}
 				} catch (err) {
 					logger.warn({ err, filePath }, "Failed to send file via WhatsApp");
 				}
 			}
 		} catch (err) {
-			logger.error({ err, userId: user.id }, "Agent run failed (WhatsApp)");
+			logger.error({ err, groupJid }, "Agent run failed (WhatsApp group)");
 			if (whatsapp.isConnected) {
-				await whatsapp.sendText(message.jid, "Something went wrong, try again.");
+				await whatsapp.sendText(groupJid, "Something went wrong, try again.");
 			}
 		} finally {
-			whatsapp.stopComposing(message.jid);
+			whatsapp.stopComposing(groupJid);
 		}
 	});
 });
