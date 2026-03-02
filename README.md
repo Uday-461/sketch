@@ -12,6 +12,7 @@
   <img src="https://img.shields.io/badge/node-24%2B-brightgreen?style=for-the-badge" alt="Node 24+" />
   <a href="https://github.com/canvasxai/sketch/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/canvasxai/sketch/ci.yml?style=for-the-badge&label=CI" alt="CI" /></a>
   <a href="https://github.com/canvasxai/sketch/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=for-the-badge" alt="PRs Welcome" /></a>
+  <a href="https://platform.claude.com/docs/en/agent-sdk/overview"><img src="https://img.shields.io/badge/built%20with-Claude%20Agent%20SDK-D97757?style=for-the-badge" alt="Built with Claude Agent SDK" /></a>
 </p>
 
 <p align="center">
@@ -19,6 +20,8 @@
 </p>
 
 ---
+
+> Inspired by [OpenClaw](https://github.com/openclaw/openclaw) — the personal AI assistant. Sketch brings the same multi-channel assistant experience to teams and organizations.
 
 ## Why Sketch
 
