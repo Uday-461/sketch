@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.1] — 2026-03-04
+
+- Fix sender attribution in shared contexts (channels/groups) persisting across SDK session resumes
+- Remove dead recentMessages and groupContext.senderName code
+
 ## [0.7.0] — 2026-03-02
 
 - WhatsApp group support with mention-only activation
