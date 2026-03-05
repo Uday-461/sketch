@@ -8,6 +8,7 @@
  * The integration provider MCP (Canvas/Composio) is hidden from the MCP list;
  * it's surfaced only as "via Canvas" in the Integrations section header.
  */
+import { ConnectionsBanner } from "@/components/connections-banner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -249,44 +250,11 @@ export function ConnectionsPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Integration Provider Banner (empty state)
+// Integration Provider Banner (empty state) — delegates to ConnectionsBanner
 // ---------------------------------------------------------------------------
 
 function IntegrationProviderBanner({ onConnect }: { onConnect: () => void }) {
-  return (
-    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-[#2d1f3d] via-[#1e1533] to-[#160f28] px-8 py-8">
-      {/* Gradient glow behind content */}
-      <div className="absolute -right-20 -top-20 size-64 rounded-full bg-primary/15 blur-3xl" />
-      <div className="absolute -bottom-10 -left-10 size-40 rounded-full bg-primary/10 blur-2xl" />
-
-      <div className="relative">
-        <h2 className="text-2xl tracking-tight text-white">
-          Let your team connect their{" "}
-          <em
-            className="not-italic"
-            style={{
-              fontFamily: "'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif",
-              fontStyle: "italic",
-            }}
-          >
-            own apps, securely.
-          </em>
-        </h2>
-        <p className="mt-3 max-w-md text-sm text-white/50">
-          2,700+ integrations — ClickUp, Google Calendar, Gmail, Slack, and more. Each member authorizes with their own
-          credentials.
-        </p>
-        <button
-          type="button"
-          className="mt-5 inline-flex items-center gap-1.5 text-sm text-white hover:opacity-80 transition-opacity"
-          onClick={onConnect}
-        >
-          Connect Canvas
-          <span aria-hidden="true">&rarr;</span>
-        </button>
-      </div>
-    </div>
-  );
+  return <ConnectionsBanner onConnect={onConnect} />;
 }
 
 // ---------------------------------------------------------------------------
