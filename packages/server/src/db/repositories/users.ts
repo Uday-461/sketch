@@ -20,13 +20,14 @@ export function createUserRepository(db: Kysely<DB>) {
       return db.selectFrom("users").selectAll().where("id", "=", id).executeTakeFirst();
     },
 
-    async create(data: { name: string; slackUserId?: string; whatsappNumber?: string }) {
+    async create(data: { name: string; slackUserId?: string; whatsappNumber?: string; email?: string }) {
       const id = randomUUID();
       await db
         .insertInto("users")
         .values({
           id,
           name: data.name,
+          email: data.email ?? null,
           slack_user_id: data.slackUserId ?? null,
           whatsapp_number: data.whatsappNumber ?? null,
         })
@@ -35,9 +36,10 @@ export function createUserRepository(db: Kysely<DB>) {
       return db.selectFrom("users").selectAll().where("id", "=", id).executeTakeFirstOrThrow();
     },
 
-    async update(id: string, data: { name?: string; whatsappNumber?: string | null }) {
+    async update(id: string, data: { name?: string; email?: string | null; whatsappNumber?: string | null }) {
       const values: Record<string, unknown> = {};
       if (data.name !== undefined) values.name = data.name;
+      if (data.email !== undefined) values.email = data.email;
       if (data.whatsappNumber !== undefined) values.whatsapp_number = data.whatsappNumber;
 
       if (Object.keys(values).length > 0) {

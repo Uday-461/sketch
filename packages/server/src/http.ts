@@ -9,14 +9,21 @@ import { Hono } from "hono";
 import type { Kysely } from "kysely";
 import { authRoutes } from "./api/auth";
 import { channelRoutes } from "./api/channels";
+import { connectorRoutes } from "./api/connectors";
+import { emailRoutes } from "./api/email";
 import { healthRoutes } from "./api/health";
 import { createAuthMiddleware } from "./api/middleware";
+import { providerIdentityRoutes } from "./api/provider-identities";
 import { settingsRoutes } from "./api/settings";
 import { setupRoutes } from "./api/setup";
+import { teamRoutes } from "./api/teams";
 import { userRoutes } from "./api/users";
 import { whatsappRoutes } from "./api/whatsapp";
 import type { Config } from "./config";
+import { createConnectorRepository } from "./db/repositories/connectors";
+import { createProviderIdentityRepository } from "./db/repositories/provider-identities";
 import { createSettingsRepository } from "./db/repositories/settings";
+import { createTeamRepository } from "./db/repositories/teams";
 import { createUserRepository } from "./db/repositories/users";
 import type { DB } from "./db/schema";
 import type { SlackBot } from "./slack/bot";
@@ -25,6 +32,7 @@ import type { WhatsAppBot } from "./whatsapp/bot";
 interface AppDeps {
   whatsapp?: WhatsAppBot;
   getSlack?: () => SlackBot | null;
+  logger?: import("pino").Logger;
   onSlackTokensUpdated?: (tokens?: { botToken: string; appToken: string }) => Promise<void>;
   onSlackDisconnect?: () => Promise<void>;
   onLlmSettingsUpdated?: () => Promise<void>;
@@ -34,6 +42,8 @@ export function createApp(db: Kysely<DB>, _config: Config, deps?: AppDeps) {
   const app = new Hono();
   const settings = createSettingsRepository(db);
   const users = createUserRepository(db);
+  const connectors = createConnectorRepository(db);
+  const teams = createTeamRepository(db);
 
   // Auth middleware on all /api/* routes (with setup mode + auth checks)
   app.use("/api/*", createAuthMiddleware(settings));
@@ -52,12 +62,28 @@ export function createApp(db: Kysely<DB>, _config: Config, deps?: AppDeps) {
   app.route("/api/users", userRoutes(users));
   app.route(
     "/api/channels",
-    channelRoutes({ whatsapp: deps?.whatsapp, getSlack: deps?.getSlack, onSlackDisconnect: deps?.onSlackDisconnect }),
+    channelRoutes({
+      whatsapp: deps?.whatsapp,
+      getSlack: deps?.getSlack,
+      onSlackDisconnect: deps?.onSlackDisconnect,
+      settings,
+    }),
   );
 
   if (deps?.whatsapp) {
     app.route("/api/channels/whatsapp", whatsappRoutes(deps.whatsapp));
   }
+
+  app.route("/api/channels/email", emailRoutes(settings));
+
+  if (deps?.logger) {
+    app.route("/api/connectors", connectorRoutes(connectors, db, deps.logger));
+  }
+
+  app.route("/api/teams", teamRoutes(teams, users, connectors));
+
+  const identities = createProviderIdentityRepository(db);
+  app.route("/api/identities", providerIdentityRoutes(identities, users));
 
   // Static file serving for the SPA (production only — dev uses Vite dev server)
   // Resolve path relative to this file's location (works with both tsx and tsdown bundle)

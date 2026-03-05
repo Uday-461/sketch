@@ -10,6 +10,12 @@ import * as m003 from "./migrations/003-whatsapp-auth";
 import * as m004 from "./migrations/004-settings";
 import * as m005 from "./migrations/005-settings-slack-llm";
 import * as m006 from "./migrations/006-settings-jwt-secret";
+import * as m007 from "./migrations/007-connectors";
+import * as m008 from "./migrations/008-connector-enrichment";
+import * as m009 from "./migrations/009-teams";
+import * as m010 from "./migrations/010-user-provider-identities";
+import * as m011 from "./migrations/011-file-access-email";
+import * as m012 from "./migrations/012-settings-smtp";
 import type { DB } from "./schema";
 
 export async function runMigrations(db: Kysely<DB>): Promise<void> {
@@ -24,6 +30,12 @@ export async function runMigrations(db: Kysely<DB>): Promise<void> {
           "004-settings": m004,
           "005-settings-slack-llm": m005,
           "006-settings-jwt-secret": m006,
+          "007-connectors": m007,
+          "008-connector-enrichment": m008,
+          "009-teams": m009,
+          "010-user-provider-identities": m010,
+          "011-file-access-email": m011,
+          "012-settings-smtp": m012,
         };
       },
     },

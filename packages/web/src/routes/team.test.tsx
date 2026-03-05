@@ -60,7 +60,7 @@ describe("TeamPage", () => {
       await user.click(screen.getByRole("button", { name: /Add member/i }));
 
       await waitFor(() => {
-        expect(screen.getByText("This person will be able to message the bot on WhatsApp.")).toBeInTheDocument();
+        expect(screen.getByText("Add a team member with their email or WhatsApp number.")).toBeInTheDocument();
       });
     });
 
@@ -112,7 +112,7 @@ describe("TeamPage", () => {
       server.use(
         http.post("/api/users", () => {
           return HttpResponse.json(
-            { error: { code: "CONFLICT", message: "This number is already linked to another member" } },
+            { error: { code: "CONFLICT", message: "This email or number is already linked to another member" } },
             { status: 409 },
           );
         }),
@@ -136,7 +136,7 @@ describe("TeamPage", () => {
       await user.click(screen.getByRole("button", { name: "Add member" }));
 
       await waitFor(() => {
-        expect(screen.getByText("This number is already linked to another member")).toBeInTheDocument();
+        expect(screen.getByText("This email or number is already linked to another member")).toBeInTheDocument();
       });
     });
   });

@@ -6,6 +6,7 @@ import { runAgent } from "./agent/runner";
 import { getSessionId } from "./agent/sessions";
 import { ensureChannelWorkspace, ensureGroupWorkspace, ensureWorkspace } from "./agent/workspace";
 import { loadConfig, validateConfig } from "./config";
+import { startSyncScheduler } from "./connectors/sync";
 import { createDatabase } from "./db/index";
 import { runMigrations } from "./db/migrate";
 import { createChannelRepository } from "./db/repositories/channels";
@@ -558,6 +559,7 @@ whatsapp.onMessage(async (message) => {
 const app = createApp(db, config, {
   whatsapp,
   getSlack: () => slack,
+  logger,
   onSlackTokensUpdated: async (tokens) => {
     if (!tokens) return;
     await startSlackBotIfConfigured(tokens);
@@ -589,9 +591,13 @@ if (!slack && !whatsappConnected) {
   logger.info("No channels active — pair WhatsApp via GET /api/channels/whatsapp/pair or configure Slack tokens");
 }
 
-// 11. Graceful shutdown
+// 11. Connector sync scheduler (every 30 minutes)
+const stopSyncScheduler = startSyncScheduler(db, logger);
+
+// 12. Graceful shutdown
 async function shutdown() {
   logger.info("Shutting down...");
+  stopSyncScheduler();
   if (slack) await slack.stop();
   await whatsapp.stop();
   server.close();
