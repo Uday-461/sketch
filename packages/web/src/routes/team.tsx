@@ -69,10 +69,12 @@ export function TeamPage() {
     <div className="mx-auto max-w-3xl px-6 py-8">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Team</h1>
-        <Button size="sm" onClick={() => setShowAddDialog(true)}>
-          <PlusIcon size={14} weight="bold" />
-          Add member
-        </Button>
+        {!isLoading && users.length > 0 && (
+          <Button size="sm" onClick={() => setShowAddDialog(true)}>
+            <PlusIcon size={14} weight="bold" />
+            Add member
+          </Button>
+        )}
       </div>
 
       <div className="mt-6">

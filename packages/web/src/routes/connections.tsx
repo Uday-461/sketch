@@ -366,10 +366,32 @@ function McpServersList({
     <div>
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm font-medium text-muted-foreground">MCP Servers</p>
-        <Button size="sm" onClick={onAdd}>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="inline-flex items-center gap-1.5 transition-colors"
+          style={{
+            background: "transparent",
+            border: "1px solid rgba(107, 125, 250, 0.4)",
+            color: "#a5b0ff",
+            borderRadius: 8,
+            padding: "8px 16px",
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = "rgba(107, 125, 250, 0.7)";
+            e.currentTarget.style.background = "rgba(107, 125, 250, 0.06)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = "rgba(107, 125, 250, 0.4)";
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
           <PlusIcon size={14} weight="bold" />
-          Add MCP
-        </Button>
+          New server
+        </button>
       </div>
 
       {servers.length === 0 ? (
