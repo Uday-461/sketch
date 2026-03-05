@@ -52,7 +52,7 @@ const primaryNav: NavItem[] = [
 ];
 
 const adminNav: NavItem[] = [
-  { label: "Integrations", icon: <LinkSimpleIcon size={18} />, href: "/integrations", disabled: true },
+  { label: "Connections", icon: <LinkSimpleIcon size={18} />, href: "/connections" },
   { label: "Settings", icon: <GearIcon size={18} />, href: "/settings", disabled: true },
 ];
 
