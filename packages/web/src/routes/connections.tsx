@@ -45,11 +45,13 @@ import {
   CircleDashedIcon,
   DotsThreeIcon,
   GearIcon,
+  HandPalmIcon,
   LinkSimpleIcon,
   PencilSimpleIcon,
   PlusIcon,
   SpinnerGapIcon,
   TrashIcon,
+  UsersIcon,
 } from "@phosphor-icons/react";
 import { createRoute } from "@tanstack/react-router";
 import { useState } from "react";
@@ -90,6 +92,13 @@ interface IntegrationTool {
   permission: ToolPermission;
 }
 
+interface IntegrationUser {
+  id: string;
+  name: string;
+  email: string;
+  connectedAt: string;
+}
+
 interface Integration {
   id: string;
   service: string;
@@ -98,6 +107,7 @@ interface Integration {
   connectedUsers: number;
   totalUsers: number;
   tools: IntegrationTool[];
+  userDetails: IntegrationUser[];
 }
 
 type IntegrationProvider = {
@@ -307,6 +317,14 @@ function useMockData() {
       toolCount: 3,
     },
   ]);
+  const MOCK_TEAM_USERS: IntegrationUser[] = [
+    { id: "u-1", name: "Harsh Kalra", email: "harsh@sketch.dev", connectedAt: "2026-02-15T10:30:00Z" },
+    { id: "u-2", name: "Rohan Nijhara", email: "rohan@sketch.dev", connectedAt: "2026-02-16T14:00:00Z" },
+    { id: "u-3", name: "Priya Sharma", email: "priya@sketch.dev", connectedAt: "2026-02-20T09:15:00Z" },
+    { id: "u-4", name: "Alex Chen", email: "alex@sketch.dev", connectedAt: "2026-03-01T11:45:00Z" },
+    { id: "u-5", name: "Maya Patel", email: "maya@sketch.dev", connectedAt: "2026-03-03T16:20:00Z" },
+  ];
+
   const [integrations, setIntegrations] = useState<Integration[]>([
     {
       id: "int-1",
@@ -324,6 +342,7 @@ function useMockData() {
         { id: "cu-6", name: "clickup-delete-task", category: "write", permission: "needs_approval" },
         { id: "cu-7", name: "clickup-create-comment", category: "write", permission: "needs_approval" },
       ],
+      userDetails: MOCK_TEAM_USERS.slice(0, 3),
     },
     {
       id: "int-2",
@@ -340,6 +359,7 @@ function useMockData() {
         { id: "sl-5", name: "slack-update-message", category: "write", permission: "needs_approval" },
         { id: "sl-6", name: "slack-delete-message", category: "write", permission: "never" },
       ],
+      userDetails: MOCK_TEAM_USERS,
     },
     {
       id: "int-3",
@@ -355,6 +375,7 @@ function useMockData() {
         { id: "gc-4", name: "gcal-update-event", category: "write", permission: "needs_approval" },
         { id: "gc-5", name: "gcal-delete-event", category: "write", permission: "never" },
       ],
+      userDetails: [],
     },
     {
       id: "int-4",
@@ -372,6 +393,7 @@ function useMockData() {
         { id: "gm-6", name: "gmail-trash-message", category: "write", permission: "never" },
         { id: "gm-7", name: "gmail-create-draft", category: "write", permission: "needs_approval" },
       ],
+      userDetails: MOCK_TEAM_USERS.slice(0, 2),
     },
   ]);
 
@@ -411,6 +433,9 @@ export function ConnectionsPage() {
       connectedUsers: 1,
       totalUsers: 5,
       tools: app.defaultTools.map((t) => ({ ...t, id: `${t.id}-${Date.now()}` })),
+      userDetails: [
+        { id: "u-1", name: "Harsh Kalra", email: "harsh@sketch.dev", connectedAt: new Date().toISOString() },
+      ],
     };
     setIntegrations((prev) => [...prev, newIntegration]);
     setShowAddIntegrationDialog(false);
@@ -576,7 +601,7 @@ function IntegrationsList({
             via {providerLabel}
           </Badge>
         </div>
-        <Button size="sm" variant="outline" onClick={onAdd}>
+        <Button size="sm" className="gap-1.5" onClick={onAdd}>
           <PlusIcon size={14} weight="bold" />
           Add integration
         </Button>
@@ -670,32 +695,10 @@ function McpServersList({
     <div>
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm font-medium text-muted-foreground">MCP Servers</p>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="inline-flex items-center gap-1.5 transition-colors"
-          style={{
-            background: "transparent",
-            border: "1px solid rgba(107, 125, 250, 0.4)",
-            color: "#a5b0ff",
-            borderRadius: 8,
-            padding: "8px 16px",
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: "pointer",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = "rgba(107, 125, 250, 0.7)";
-            e.currentTarget.style.background = "rgba(107, 125, 250, 0.06)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "rgba(107, 125, 250, 0.4)";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
+        <Button size="sm" className="gap-1.5" onClick={onAdd}>
           <PlusIcon size={14} weight="bold" />
           New server
-        </button>
+        </Button>
       </div>
 
       {servers.length === 0 ? (
@@ -1232,17 +1235,7 @@ const PERMISSION_OPTIONS: { value: ToolPermission; label: string; icon: React.Re
   {
     value: "needs_approval",
     label: "Needs approval",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-        <path
-          d="M7 1.75v3.5M5.25 3.5h3.5M3.5 6.125v5.25A1.125 1.125 0 004.625 12.5h4.75a1.125 1.125 0 001.125-1.125v-5.25"
-          stroke="currentColor"
-          strokeWidth="1.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    ),
+    icon: <HandPalmIcon size={14} weight="bold" />,
   },
   {
     value: "never",
@@ -1324,15 +1317,7 @@ function BulkPermissionDropdown({
         >
           {currentPermission === "always_allow" && <CheckIcon size={12} weight="bold" className="text-emerald-600" />}
           {currentPermission === "needs_approval" && (
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" className="text-amber-600" aria-hidden="true">
-              <path
-                d="M7 1.75v3.5M5.25 3.5h3.5M3.5 6.125v5.25A1.125 1.125 0 004.625 12.5h4.75a1.125 1.125 0 001.125-1.125v-5.25"
-                stroke="currentColor"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <HandPalmIcon size={12} weight="bold" className="text-amber-600" />
           )}
           {label}
           <CaretIcon direction="down" />
@@ -1344,22 +1329,7 @@ function BulkPermissionDropdown({
           Always allow
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onChange("needs_approval")}>
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            className="mr-2 text-amber-600"
-            aria-hidden="true"
-          >
-            <path
-              d="M7 1.75v3.5M5.25 3.5h3.5M3.5 6.125v5.25A1.125 1.125 0 004.625 12.5h4.75a1.125 1.125 0 001.125-1.125v-5.25"
-              stroke="currentColor"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <HandPalmIcon size={14} weight="bold" className="mr-2 text-amber-600" />
           Needs approval
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onChange("never")}>
@@ -1611,6 +1581,13 @@ function ManageIntegrationDialog({
         </DialogHeader>
 
         <div className="max-h-[60vh] space-y-5 overflow-y-auto py-2">
+          {/* Connected team members */}
+          <ConnectedUsersSection
+            userDetails={integration.userDetails}
+            connectedUsers={integration.connectedUsers}
+            totalUsers={integration.totalUsers}
+          />
+
           {/* Read-only tools */}
           {readTools.length > 0 && (
             <ToolCategorySection
@@ -1641,6 +1618,73 @@ function ManageIntegrationDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ConnectedUsersSection({
+  userDetails,
+  connectedUsers,
+  totalUsers,
+}: {
+  userDetails: IntegrationUser[];
+  connectedUsers: number;
+  totalUsers: number;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setCollapsed(!collapsed)}
+          className="flex items-center gap-2 text-sm font-medium text-foreground hover:text-foreground/80 transition-colors"
+        >
+          <CaretIcon direction={collapsed ? "down" : "up"} />
+          <UsersIcon size={14} className="text-muted-foreground" />
+          Team members
+          <span className="text-xs font-normal text-muted-foreground">
+            {connectedUsers}/{totalUsers} connected
+          </span>
+        </button>
+      </div>
+
+      {!collapsed && (
+        <div className="mt-2 rounded-lg border border-border bg-card">
+          {userDetails.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-muted-foreground">No team members have connected yet.</div>
+          ) : (
+            userDetails.map((user, i) => (
+              <div
+                key={user.id}
+                className={`flex items-center gap-3 px-4 py-3 ${i < userDetails.length - 1 ? "border-b border-border" : ""}`}
+              >
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground">
+                  {user.name
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .slice(0, 2)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate">{user.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <CheckIcon size={12} className="text-success" />
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {new Date(user.connectedAt).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
