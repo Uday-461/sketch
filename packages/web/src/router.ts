@@ -7,13 +7,14 @@ import { indexRoute } from "./routes/index";
 import { loginRoute } from "./routes/login";
 import { onboardingRoute } from "./routes/onboarding";
 import { rootRoute } from "./routes/root";
+import { skillsRoute } from "./routes/skills";
 import { teamRoute } from "./routes/team";
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
   onboardingRoute,
   indexRoute,
-  dashboardRoute.addChildren([channelsRoute, teamRoute, connectionsRoute, filesRoute]),
+  dashboardRoute.addChildren([channelsRoute, teamRoute, connectionsRoute, filesRoute, skillsRoute]),
 ]);
 
 export const router = createRouter({ routeTree });

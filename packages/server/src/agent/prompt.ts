@@ -6,8 +6,9 @@ import type { BufferedMessage } from "../slack/thread-buffer";
  * Contains platform formatting rules, user metadata, and optional channel/bot context.
  * No post-processing — the agent produces platform-native formatting.
  *
- * For channel mentions, channelContext injects the channel name, recent messages,
- * and changes "User" to "Sent by" to distinguish the sender in a shared workspace.
+ * For shared contexts (channels/groups), sender identity is NOT included here.
+ * It goes in the user message via formatBufferedContext so it persists across
+ * SDK session resumes (system prompt content does not survive resume).
  */
 export function buildSystemContext(params: {
   platform: "slack" | "whatsapp";
@@ -17,12 +18,10 @@ export function buildSystemContext(params: {
   botName?: string | null;
   channelContext?: {
     channelName: string;
-    recentMessages: Array<{ userName: string; text: string }>;
   };
   groupContext?: {
     groupName: string;
     groupDescription?: string;
-    senderName: string;
   };
 }): string {
   const sections: string[] = [];
@@ -60,11 +59,6 @@ export function buildSystemContext(params: {
       "You are responding in a shared channel. Multiple users share this workspace and can see your responses.",
       "Address the user who mentioned you by name. Keep responses focused and concise.",
     );
-
-    if (params.channelContext.recentMessages.length > 0) {
-      const formatted = params.channelContext.recentMessages.map((m) => `[${m.userName}]: ${m.text}`).join("\n");
-      sections.push("## Recent Channel Messages", formatted);
-    }
   }
 
   if (params.groupContext) {
@@ -131,9 +125,7 @@ export function buildSystemContext(params: {
     sections.push("Note: In this workspace, the CLAUDE.md is shared by all users.");
   }
 
-  if (params.channelContext || params.groupContext) {
-    sections.push("## Sent by", `Name: ${params.userName}`);
-  } else {
+  if (!params.channelContext && !params.groupContext) {
     sections.push("## User", `Name: ${params.userName}`);
   }
 
@@ -141,20 +133,26 @@ export function buildSystemContext(params: {
 }
 
 /**
- * Formats buffered thread messages into a prompt that prepends context to
- * the user's current message. Used on subsequent @mentions in a thread where
- * the SDK session already has prior conversation — the buffer contains only
- * messages from other users/bots since the bot's last response.
+ * Formats buffered context messages and the current user message into a chat-log
+ * style prompt. Every message is attributed as `[Name]: text` so sender identity
+ * persists across SDK session resumes (system prompt content does not survive).
+ *
+ * When a header is provided (e.g. bootstrap context for first mentions), it is
+ * prepended before the buffered messages. A blank line separates context from
+ * the current message.
  */
 export function formatBufferedContext(
   messages: BufferedMessage[],
   currentUserName: string,
   currentMessage: string,
-  header = "[Messages in this thread since your last response]",
+  header?: string,
 ): string {
-  if (messages.length === 0) return currentMessage;
+  const currentLine = `[${currentUserName}]: ${currentMessage}`;
 
-  const lines: string[] = [header];
+  if (messages.length === 0) return currentLine;
+
+  const lines: string[] = [];
+  if (header) lines.push(header);
   for (const msg of messages) {
     lines.push(`[${msg.userName}]: ${msg.text}`);
     if (msg.attachments?.length) {
@@ -162,6 +160,6 @@ export function formatBufferedContext(
     }
   }
 
-  lines.push("", `[Current message from ${currentUserName}]`, currentMessage);
+  lines.push("", currentLine);
   return lines.join("\n");
 }

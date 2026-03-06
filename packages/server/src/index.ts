@@ -289,9 +289,7 @@ function createConfiguredSlackBot(tokens: { botToken: string; appToken: string }
       if (existingSession) {
         const buffered = threadBuffer.drain(message.channelId, threadTs);
         logger.debug({ threadTs, bufferedCount: buffered.length }, "Draining thread buffer for subsequent mention");
-        if (buffered.length > 0) {
-          userMessage = formatBufferedContext(buffered, user.name, userMessage);
-        }
+        userMessage = formatBufferedContext(buffered, user.name, userMessage);
       } else {
         const history = message.threadTs
           ? await slackBot.getThreadReplies(message.channelId, message.threadTs, config.SLACK_THREAD_HISTORY_LIMIT)
@@ -309,12 +307,10 @@ function createConfiguredSlackBot(tokens: { botToken: string; appToken: string }
           const info = await userCache.resolve(msg.userId, (id) => slackBot.getUserInfo(id));
           bootstrapMessages.push({ userName: info.realName, text: msg.text, ts: msg.ts });
         }
-        if (bootstrapMessages.length > 0) {
-          const header = message.threadTs
-            ? "[Thread context before you joined]"
-            : "[Recent channel messages for context]";
-          userMessage = formatBufferedContext(bootstrapMessages, user.name, userMessage, header);
-        }
+        const header = message.threadTs
+          ? "[Thread context before you joined]"
+          : "[Recent channel messages for context]";
+        userMessage = formatBufferedContext(bootstrapMessages, user.name, userMessage, header);
       }
 
       const thinkingTs = await slackBot.postThreadReply(message.channelId, threadTs, "_Thinking..._");
@@ -334,7 +330,6 @@ function createConfiguredSlackBot(tokens: { botToken: string; appToken: string }
           attachments: attachments.length > 0 ? attachments : undefined,
           channelContext: {
             channelName: channel.name,
-            recentMessages: [],
           },
         });
 
@@ -511,7 +506,6 @@ whatsapp.onMessage(async (message) => {
         contextMessages,
         message.pushName,
         message.text || "See attached files.",
-        "[Recent group messages since your last response]",
       );
 
       const onMessage = createWhatsAppMessageHandler(
@@ -530,7 +524,7 @@ whatsapp.onMessage(async (message) => {
         orgName: settingsRow?.org_name,
         botName: settingsRow?.bot_name,
         attachments: attachments.length > 0 ? attachments : undefined,
-        groupContext: { groupName, groupDescription, senderName: message.pushName },
+        groupContext: { groupName, groupDescription },
       });
 
       for (const filePath of result.pendingUploads) {

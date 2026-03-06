@@ -27,5 +27,5 @@ What actually happened. Include error messages or logs if available.
 
 - **OS:** (e.g., Ubuntu 24.04, macOS 15)
 - **Node.js:** (e.g., 24.x)
-- **Sketch version:** (e.g., 0.7.0)
+- **Sketch version:** (e.g., 0.7.1)
 - **Channel:** (Slack / WhatsApp / both)

@@ -105,10 +105,6 @@ describe("buildSystemContext", () => {
       workspaceDir: "/data/workspaces/channel-C001",
       channelContext: {
         channelName: "general",
-        recentMessages: [
-          { userName: "Alice", text: "has anyone tried the new API?" },
-          { userName: "Bob", text: "yeah it works on staging" },
-        ],
       },
     });
 
@@ -120,16 +116,13 @@ describe("buildSystemContext", () => {
       expect(result).toContain("Multiple users share this workspace");
     });
 
-    it("uses Sent by instead of User", () => {
-      expect(result).toContain("## Sent by");
-      expect(result).toContain("Carol");
+    it("does not include sender name in system prompt", () => {
+      expect(result).not.toContain("## Sent by");
       expect(result).not.toContain("## User");
     });
 
-    it("includes recent messages with usernames", () => {
-      expect(result).toContain("## Recent Channel Messages");
-      expect(result).toContain("[Alice]: has anyone tried the new API?");
-      expect(result).toContain("[Bob]: yeah it works on staging");
+    it("includes address-by-name instruction", () => {
+      expect(result).toContain("Address the user who mentioned you by name");
     });
 
     it("still includes Slack formatting rules", () => {
@@ -209,7 +202,6 @@ describe("buildSystemContext", () => {
         workspaceDir: "/data/workspaces/channel-C001",
         channelContext: {
           channelName: "general",
-          recentMessages: [],
         },
       });
       expect(result).toContain("shared by all users");
@@ -224,7 +216,6 @@ describe("buildSystemContext", () => {
       groupContext: {
         groupName: "Engineering Team",
         groupDescription: "Daily standups and discussions",
-        senderName: "Alice",
       },
     });
 
@@ -240,10 +231,13 @@ describe("buildSystemContext", () => {
       expect(result).toContain("Multiple users share this workspace");
     });
 
-    it("uses Sent by instead of User", () => {
-      expect(result).toContain("## Sent by");
-      expect(result).toContain("Alice");
+    it("does not include sender name in system prompt", () => {
+      expect(result).not.toContain("## Sent by");
       expect(result).not.toContain("## User");
+    });
+
+    it("includes address-by-name instruction", () => {
+      expect(result).toContain("Address the user who mentioned you by name");
     });
 
     it("includes shared memory note", () => {
@@ -262,7 +256,6 @@ describe("buildSystemContext", () => {
       workspaceDir: "/data/workspaces/wa-group-456",
       groupContext: {
         groupName: "Casual Chat",
-        senderName: "Bob",
       },
     });
 
@@ -274,46 +267,50 @@ describe("buildSystemContext", () => {
       expect(result).not.toContain("Group description:");
     });
   });
-
-  describe("channel context with empty recent messages", () => {
-    const result = buildSystemContext({
-      platform: "slack",
-      userName: "Dave",
-      workspaceDir: "/data/workspaces/channel-C002",
-      channelContext: {
-        channelName: "random",
-        recentMessages: [],
-      },
-    });
-
-    it("includes channel name", () => {
-      expect(result).toContain("Slack Channel #random");
-    });
-
-    it("omits recent messages section when array is empty", () => {
-      expect(result).not.toContain("## Recent Channel Messages");
-    });
-  });
 });
 
 describe("formatBufferedContext", () => {
-  it("returns just the current message when buffer is empty", () => {
+  it("wraps current message with sender attribution when buffer is empty", () => {
     const result = formatBufferedContext([], "Alice", "what do you think?");
-    expect(result).toBe("what do you think?");
+    expect(result).toBe("[Alice]: what do you think?");
   });
 
-  it("prepends buffered messages with header", () => {
+  it("prepends buffered messages with current message attributed", () => {
     const messages = [
       { userName: "Bob", text: "I like option A", ts: "1111.0001" },
       { userName: "Carol", text: "Me too", ts: "1111.0002" },
     ];
     const result = formatBufferedContext(messages, "Alice", "what do you think?");
 
-    expect(result).toContain("[Messages in this thread since your last response]");
     expect(result).toContain("[Bob]: I like option A");
     expect(result).toContain("[Carol]: Me too");
-    expect(result).toContain("[Current message from Alice]");
-    expect(result).toContain("what do you think?");
+    expect(result).toContain("[Alice]: what do you think?");
+  });
+
+  it("does not include a header when none is provided", () => {
+    const messages = [{ userName: "Bob", text: "hey", ts: "1111.0001" }];
+    const result = formatBufferedContext(messages, "Alice", "hi");
+
+    expect(result).toBe("[Bob]: hey\n\n[Alice]: hi");
+  });
+
+  it("includes header when provided", () => {
+    const messages = [{ userName: "Bob", text: "hey there", ts: "1111.0001" }];
+    const result = formatBufferedContext(messages, "Alice", "hello", "[Thread context before you joined]");
+
+    expect(result).toContain("[Thread context before you joined]");
+    expect(result).toContain("[Bob]: hey there");
+    expect(result).toContain("[Alice]: hello");
+  });
+
+  it("separates buffered messages from current message with blank line", () => {
+    const messages = [{ userName: "Bob", text: "update", ts: "1111.0001" }];
+    const result = formatBufferedContext(messages, "Alice", "thanks");
+
+    const lines = result.split("\n");
+    const blankIdx = lines.indexOf("");
+    expect(blankIdx).toBeGreaterThan(0);
+    expect(lines[blankIdx + 1]).toBe("[Alice]: thanks");
   });
 
   it("includes XML attachment tags for messages with files", () => {
@@ -339,27 +336,9 @@ describe("formatBufferedContext", () => {
     expect(result).toContain('name="report.pdf"');
     expect(result).toContain('path="/ws/attachments/report.pdf"');
 
-    // Attachments should appear inline after the sender's message, before the current message
     const attachIdx = result.indexOf("<attachments>");
-    const currentIdx = result.indexOf("[Current message from Alice]");
+    const currentIdx = result.indexOf("[Alice]: looks good?");
     expect(attachIdx).toBeLessThan(currentIdx);
-  });
-
-  it("handles single buffered message", () => {
-    const messages = [{ userName: "Bob", text: "quick update", ts: "1111.0001" }];
-    const result = formatBufferedContext(messages, "Alice", "thanks");
-
-    expect(result).toContain("[Bob]: quick update");
-    expect(result).toContain("[Current message from Alice]");
-    expect(result).toContain("thanks");
-  });
-
-  it("uses custom header when provided", () => {
-    const messages = [{ userName: "Bob", text: "hey there", ts: "1111.0001" }];
-    const result = formatBufferedContext(messages, "Alice", "hello", "[Thread context before you joined]");
-
-    expect(result).toContain("[Thread context before you joined]");
-    expect(result).not.toContain("[Messages in this thread since your last response]");
   });
 
   it("preserves message order", () => {
@@ -373,7 +352,7 @@ describe("formatBufferedContext", () => {
     const firstIdx = result.indexOf("[Alice]: first");
     const secondIdx = result.indexOf("[Bob]: second");
     const thirdIdx = result.indexOf("[Carol]: third");
-    const fourthIdx = result.indexOf("fourth");
+    const fourthIdx = result.indexOf("[Dave]: fourth");
     expect(firstIdx).toBeLessThan(secondIdx);
     expect(secondIdx).toBeLessThan(thirdIdx);
     expect(thirdIdx).toBeLessThan(fourthIdx);
