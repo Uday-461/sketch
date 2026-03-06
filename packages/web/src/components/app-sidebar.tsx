@@ -27,6 +27,7 @@ import {
   BrainIcon,
   CaretUpDownIcon,
   ChatCircleIcon,
+  FolderSimpleIcon,
   GearIcon,
   LinkSimpleIcon,
   MoonIcon,
@@ -47,6 +48,7 @@ interface NavItem {
 
 const primaryNav: NavItem[] = [
   { label: "Channels", icon: <ChatCircleIcon size={18} />, href: "/channels" },
+  { label: "Files", icon: <FolderSimpleIcon size={18} />, href: "/files" },
   { label: "Team", icon: <UsersThreeIcon size={18} />, href: "/team" },
   { label: "Skills", icon: <BrainIcon size={18} />, href: "/skills", disabled: true },
 ];

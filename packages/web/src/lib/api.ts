@@ -34,10 +34,11 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export interface ChannelStatus {
-  platform: "slack" | "whatsapp";
+  platform: "slack" | "whatsapp" | "email";
   configured: boolean;
   connected: boolean | null;
   phoneNumber: string | null;
+  fromAddress: string | null;
 }
 
 export interface SetupStatus {
@@ -49,6 +50,77 @@ export interface SetupStatus {
   slackConnected: boolean;
   llmConnected: boolean;
   llmProvider: "anthropic" | "bedrock" | null;
+}
+
+export interface ConnectorConfig {
+  id: string;
+  connectorType: string;
+  authType: string;
+  scopeConfig: Record<string, unknown>;
+  teamAccess: string[] | null;
+  syncStatus: "active" | "syncing" | "error" | "paused" | "pending";
+  lastSyncedAt: string | null;
+  errorMessage: string | null;
+  createdBy: string;
+  createdAt: string;
+  fileCount?: number;
+}
+
+export interface ConnectorFile {
+  id: string;
+  fileName: string;
+  fileType: string | null;
+  contentCategory: "document" | "structured";
+  source: string;
+  sourcePath: string | null;
+  providerUrl: string | null;
+  syncedAt: string;
+  sourceUpdatedAt: string | null;
+  hasSummary: boolean;
+  accessScope: "restricted" | "unrestricted";
+  accessCount: number | null;
+}
+
+export interface FileContent {
+  id: string;
+  fileName: string;
+  fileType: string | null;
+  content: string | null;
+  summary: string | null;
+  contextNote: string | null;
+  tags: string | null;
+  source: string;
+  sourcePath: string | null;
+  providerUrl: string | null;
+  enrichmentStatus: string;
+}
+
+export interface FileAccessMember {
+  providerUserId: string;
+  providerEmail: string | null;
+  userName: string | null;
+  userId: string | null;
+  mapped: boolean;
+}
+
+/** A file with its parent connector metadata — returned by the paginated all-files endpoint. */
+export interface UnifiedFile extends ConnectorFile {
+  connectorId: string;
+  connectorType: string;
+}
+
+export interface FileAccess {
+  scope: "restricted" | "unrestricted";
+  members: FileAccessMember[];
+}
+
+export interface ProviderIdentity {
+  id: string;
+  provider: string;
+  providerUserId: string;
+  providerEmail: string | null;
+  connectedAt: string;
+  hasToken: boolean;
 }
 
 export const api = {
@@ -128,6 +200,35 @@ export const api = {
       return request<{ success: boolean }>("/api/channels/slack", { method: "DELETE" });
     },
   },
+  email: {
+    verifySmtp(data: { host: string; port: number; user: string; pass: string; from: string; secure: boolean }) {
+      return request<{ success: boolean }>("/api/channels/email/verify", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    configure(data: { host: string; port: number; user: string; pass: string; from: string; secure: boolean }) {
+      return request<{ success: boolean }>("/api/channels/email/configure", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    disconnect() {
+      return request<{ success: boolean }>("/api/channels/email/configure", { method: "DELETE" });
+    },
+    sendCode(email: string) {
+      return request<{ success: boolean }>("/api/channels/email/send-code", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+    },
+    verifyCode(email: string, code: string) {
+      return request<{ success: boolean; email: string }>("/api/channels/email/verify-code", {
+        method: "POST",
+        body: JSON.stringify({ email, code }),
+      });
+    },
+  },
   whatsapp: {
     status() {
       return request<{ connected: boolean; phoneNumber: string | null }>("/api/channels/whatsapp");
@@ -144,17 +245,103 @@ export const api = {
       return request<{ orgName: string | null; botName: string }>("/api/settings/identity");
     },
   },
+  integrations: {
+    list() {
+      return request<{ connectors: ConnectorConfig[] }>("/api/connectors");
+    },
+    get(id: string) {
+      return request<{ connector: ConnectorConfig }>(`/api/connectors/${id}`);
+    },
+    connect(data: {
+      connectorType: string;
+      authType: string;
+      credentials: Record<string, unknown>;
+      scopeConfig?: Record<string, unknown>;
+    }) {
+      return request<{ connector: { id: string; connectorType: string; syncStatus: string } }>("/api/connectors", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    disconnect(id: string) {
+      return request<{ success: boolean }>(`/api/connectors/${id}`, { method: "DELETE" });
+    },
+    sync(id: string) {
+      return request<{ message: string; connectorId: string }>(`/api/connectors/${id}/sync`, { method: "POST" });
+    },
+    files(id: string) {
+      return request<{ files: ConnectorFile[] }>(`/api/connectors/${id}/files`);
+    },
+    allFiles(opts?: { limit?: number; offset?: number; source?: string }) {
+      const params = new URLSearchParams();
+      if (opts?.limit) params.set("limit", String(opts.limit));
+      if (opts?.offset) params.set("offset", String(opts.offset));
+      if (opts?.source) params.set("source", opts.source);
+      const qs = params.toString();
+      return request<{ files: UnifiedFile[]; total: number; hasMore: boolean }>(
+        `/api/connectors/all-files${qs ? `?${qs}` : ""}`,
+      );
+    },
+    fileContent(fileId: string) {
+      return request<{ file: FileContent; access: FileAccess }>(`/api/connectors/files/${fileId}/content`);
+    },
+    enrich(id: string, data: { fileIds: string[]; instruction: string }) {
+      return request<{ success: boolean; jobId: string }>(`/api/connectors/${id}/enrich`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    browseGoogleDrive(credentials: { client_id: string; client_secret: string; refresh_token: string }) {
+      return request<{
+        sharedDrives: Array<{ id: string; name: string }>;
+        rootFolders: Array<{ id: string; name: string }>;
+      }>("/api/connectors/google-drive/browse", {
+        method: "POST",
+        body: JSON.stringify({ credentials }),
+      });
+    },
+    browseGoogleDriveExisting(connectorId: string) {
+      return request<{
+        sharedDrives: Array<{ id: string; name: string; selected: boolean }>;
+        rootFolders: Array<{ id: string; name: string; selected: boolean }>;
+      }>(`/api/connectors/google-drive/browse/${connectorId}`);
+    },
+    updateScope(id: string, scopeConfig: Record<string, unknown>) {
+      return request<{
+        connector: { id: string; connectorType: string; scopeConfig: Record<string, unknown>; syncStatus: string };
+      }>(`/api/connectors/${id}/scope`, {
+        method: "PATCH",
+        body: JSON.stringify({ scopeConfig }),
+      });
+    },
+  },
+  identities: {
+    listForUser(userId: string) {
+      return request<{ identities: ProviderIdentity[] }>(`/api/identities/user/${userId}`);
+    },
+    connect(data: { userId: string; provider: string; providerUserId: string; providerEmail?: string | null }) {
+      return request<{ identity: ProviderIdentity }>("/api/identities/connect", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    disconnect(userId: string, provider: string) {
+      return request<{ success: boolean }>(`/api/identities/user/${userId}/provider/${provider}`, {
+        method: "DELETE",
+      });
+    },
+  },
   users: {
     list() {
       return request<{ users: User[] }>("/api/users");
     },
-    create(data: { name: string; whatsappNumber: string }) {
+    create(data: { name: string; email?: string; whatsappNumber?: string }) {
       return request<{ user: User }>("/api/users", {
         method: "POST",
         body: JSON.stringify(data),
       });
     },
-    update(id: string, data: { name?: string; whatsappNumber?: string | null }) {
+    update(id: string, data: { name?: string; email?: string | null; whatsappNumber?: string | null }) {
       return request<{ user: User }>(`/api/users/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),

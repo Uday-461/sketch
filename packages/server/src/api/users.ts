@@ -14,13 +14,21 @@ const whatsappNumberSchema = z
   .min(8, "Phone number must be at least 8 characters")
   .startsWith("+", "Phone number must start with +");
 
-const createUserSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  whatsappNumber: whatsappNumberSchema,
-});
+const emailSchema = z.string().email("Invalid email address");
+
+const createUserSchema = z
+  .object({
+    name: z.string().min(1, "Name is required"),
+    email: emailSchema.optional(),
+    whatsappNumber: whatsappNumberSchema.optional(),
+  })
+  .refine((data) => data.email || data.whatsappNumber, {
+    message: "Either email or WhatsApp number is required",
+  });
 
 const updateUserSchema = z.object({
   name: z.string().min(1, "Name is required").optional(),
+  email: emailSchema.nullable().optional(),
   whatsappNumber: whatsappNumberSchema.nullable().optional(),
 });
 
@@ -43,12 +51,16 @@ export function userRoutes(users: UserRepo) {
     try {
       const user = await users.create({
         name: parsed.data.name,
+        email: parsed.data.email,
         whatsappNumber: parsed.data.whatsappNumber,
       });
       return c.json({ user }, 201);
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
-        return c.json({ error: { code: "CONFLICT", message: "This number is already linked to another member" } }, 409);
+        return c.json(
+          { error: { code: "CONFLICT", message: "This email or number is already linked to another member" } },
+          409,
+        );
       }
       throw err;
     }
@@ -71,12 +83,16 @@ export function userRoutes(users: UserRepo) {
     try {
       const user = await users.update(id, {
         name: parsed.data.name,
+        email: parsed.data.email,
         whatsappNumber: parsed.data.whatsappNumber,
       });
       return c.json({ user });
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
-        return c.json({ error: { code: "CONFLICT", message: "This number is already linked to another member" } }, 409);
+        return c.json(
+          { error: { code: "CONFLICT", message: "This email or number is already linked to another member" } },
+          409,
+        );
       }
       throw err;
     }

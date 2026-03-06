@@ -3,7 +3,11 @@
  * Primary use case: add WhatsApp users so they can chat with the bot.
  * Slack users are auto-created on first DM; this page lets admins manage
  * WhatsApp access and see everyone.
+ *
+ * Also: link provider identities (ClickUp, Google Drive, etc.) to users
+ * so file-level access control works at query time.
  */
+import { ConnectorLogo } from "@/components/connector-logos";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,10 +31,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import type { User } from "@/lib/api";
+import type { ProviderIdentity, User } from "@/lib/api";
 import { api } from "@/lib/api";
+import { INTEGRATIONS, getIntegration } from "@/lib/integrations";
 import {
   DotsThreeIcon,
+  EnvelopeSimpleIcon,
+  LinkIcon,
   PencilSimpleIcon,
   PlusIcon,
   SlackLogoIcon,
@@ -38,6 +45,7 @@ import {
   UserMinusIcon,
   UsersThreeIcon,
   WhatsappLogoIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute, useRouteContext } from "@tanstack/react-router";
@@ -62,6 +70,7 @@ export function TeamPage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [removingUser, setRemovingUser] = useState<User | null>(null);
+  const [linkingUser, setLinkingUser] = useState<User | null>(null);
 
   const users = data?.users ?? [];
 
@@ -83,7 +92,13 @@ export function TeamPage() {
         ) : users.length === 0 ? (
           <EmptyState onAdd={() => setShowAddDialog(true)} />
         ) : (
-          <MemberList users={users} adminEmail={auth.email ?? ""} onEdit={setEditingUser} onRemove={setRemovingUser} />
+          <MemberList
+            users={users}
+            adminEmail={auth.email ?? ""}
+            onEdit={setEditingUser}
+            onRemove={setRemovingUser}
+            onLink={setLinkingUser}
+          />
         )}
       </div>
 
@@ -112,6 +127,8 @@ export function TeamPage() {
           queryClient.invalidateQueries({ queryKey: ["users"] });
         }}
       />
+
+      <LinkProviderDialog user={linkingUser} onOpenChange={(open) => !open && setLinkingUser(null)} />
     </div>
   );
 }
@@ -121,11 +138,13 @@ function MemberList({
   adminEmail,
   onEdit,
   onRemove,
+  onLink,
 }: {
   users: User[];
   adminEmail: string;
   onEdit: (user: User) => void;
   onRemove: (user: User) => void;
+  onLink: (user: User) => void;
 }) {
   return (
     <>
@@ -139,6 +158,7 @@ function MemberList({
             isLast={i === users.length - 1}
             onEdit={() => onEdit(user)}
             onRemove={() => onRemove(user)}
+            onLink={() => onLink(user)}
           />
         ))}
       </div>
@@ -152,12 +172,14 @@ function MemberRow({
   isLast,
   onEdit,
   onRemove,
+  onLink,
 }: {
   user: User;
   isCurrentAdmin: boolean;
   isLast: boolean;
   onEdit: () => void;
   onRemove: () => void;
+  onLink: () => void;
 }) {
   const initials = getInitials(user.name);
 
@@ -190,29 +212,41 @@ function MemberRow({
             tooltip={user.whatsapp_number ? "WhatsApp connected" : "WhatsApp not connected"}
             activeColor="#25D366"
           />
+          <ChannelBadge
+            icon={<EnvelopeSimpleIcon size={16} />}
+            active={!!user.email}
+            tooltip={user.email ? `Email: ${user.email}` : "Email not set"}
+            activeColor="#6366F1"
+          />
         </div>
       </TooltipProvider>
 
-      {!isCurrentAdmin && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-7">
-              <DotsThreeIcon size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onEdit}>
-              <PencilSimpleIcon size={14} className="mr-2" />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive" onClick={onRemove}>
-              <UserMinusIcon size={14} className="mr-2" />
-              Remove member
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="size-7">
+            <DotsThreeIcon size={16} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={onLink}>
+            <LinkIcon size={14} className="mr-2" />
+            Link accounts
+          </DropdownMenuItem>
+          {!isCurrentAdmin && (
+            <>
+              <DropdownMenuItem onClick={onEdit}>
+                <PencilSimpleIcon size={14} className="mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive" onClick={onRemove}>
+                <UserMinusIcon size={14} className="mr-2" />
+                Remove member
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -358,6 +392,7 @@ function LoadingSkeleton() {
             <div className="ml-auto flex gap-2">
               <Skeleton className="size-4" />
               <Skeleton className="size-4" />
+              <Skeleton className="size-4" />
             </div>
           </div>
         ))}
@@ -376,11 +411,17 @@ function AddMemberDialog({
   onSuccess: () => void;
 }) {
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
 
   const createMutation = useMutation({
-    mutationFn: () => api.users.create({ name: name.trim(), whatsappNumber: phone.trim() }),
+    mutationFn: () => {
+      const payload: Parameters<typeof api.users.create>[0] = { name: name.trim() };
+      if (email.trim()) payload.email = email.trim();
+      if (phone.trim()) payload.whatsappNumber = phone.trim();
+      return api.users.create(payload);
+    },
     onSuccess: () => {
       toast.success("Member added");
       resetAndClose();
@@ -388,7 +429,7 @@ function AddMemberDialog({
     },
     onError: (err: Error) => {
       if (err.message.includes("already linked")) {
-        setError("This number is already linked to another member");
+        setError("This email or number is already linked to another member");
       } else {
         toast.error(err.message);
       }
@@ -397,12 +438,15 @@ function AddMemberDialog({
 
   const resetAndClose = () => {
     setName("");
+    setEmail("");
     setPhone("");
     setError("");
     onOpenChange(false);
   };
 
-  const canSubmit = name.trim().length > 0 && phone.trim().startsWith("+") && phone.trim().length >= 8;
+  const hasValidEmail = email.trim().length > 0 && email.includes("@");
+  const hasValidPhone = phone.trim().startsWith("+") && phone.trim().length >= 8;
+  const canSubmit = name.trim().length > 0 && (hasValidEmail || hasValidPhone);
 
   return (
     <Dialog
@@ -415,7 +459,7 @@ function AddMemberDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add member</DialogTitle>
-          <DialogDescription>This person will be able to message the bot on WhatsApp.</DialogDescription>
+          <DialogDescription>Add a team member with their email or WhatsApp number.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -426,6 +470,20 @@ function AddMemberDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Full name"
+              disabled={createMutation.isPending}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="add-email">Email</Label>
+            <Input
+              id="add-email"
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError("");
+              }}
+              placeholder="name@example.com"
               disabled={createMutation.isPending}
             />
           </div>
@@ -477,12 +535,14 @@ function EditMemberDialog({
   onSuccess: () => void;
 }) {
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (user) {
       setName(user.name);
+      setEmail(user.email ?? "");
       setPhone(user.whatsapp_number ?? "");
       setError("");
     }
@@ -492,6 +552,7 @@ function EditMemberDialog({
     mutationFn: () =>
       api.users.update(user?.id ?? "", {
         name: name.trim(),
+        email: email.trim() || null,
         whatsappNumber: phone.trim() || null,
       }),
     onSuccess: () => {
@@ -500,16 +561,23 @@ function EditMemberDialog({
     },
     onError: (err: Error) => {
       if (err.message.includes("already linked")) {
-        setError("This number is already linked to another member");
+        setError("This email or number is already linked to another member");
       } else {
         toast.error(err.message);
       }
     },
   });
 
-  const isDirty = user && (name.trim() !== user.name || (phone.trim() || null) !== (user.whatsapp_number ?? null));
+  const isDirty =
+    user &&
+    (name.trim() !== user.name ||
+      (email.trim() || null) !== (user.email ?? null) ||
+      (phone.trim() || null) !== (user.whatsapp_number ?? null));
   const canSubmit =
-    isDirty && name.trim().length > 0 && (!phone.trim() || (phone.trim().startsWith("+") && phone.trim().length >= 8));
+    isDirty &&
+    name.trim().length > 0 &&
+    (!email.trim() || email.includes("@")) &&
+    (!phone.trim() || (phone.trim().startsWith("+") && phone.trim().length >= 8));
 
   return (
     <Dialog open={!!user} onOpenChange={onOpenChange}>
@@ -539,6 +607,21 @@ function EditMemberDialog({
               </div>
             </div>
           )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-email">Email</Label>
+            <Input
+              id="edit-email"
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError("");
+              }}
+              placeholder="name@example.com"
+              disabled={updateMutation.isPending}
+            />
+          </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="edit-phone">WhatsApp number</Label>
@@ -637,6 +720,254 @@ function RemoveMemberDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Provider identity linking dialog — map a user to their accounts in connected integrations. */
+function LinkProviderDialog({
+  user,
+  onOpenChange,
+}: {
+  user: User | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+
+  // Fetch connected integrations to know which providers are available
+  const { data: connectorsData } = useQuery({
+    queryKey: ["connectors"],
+    queryFn: () => api.integrations.list(),
+    enabled: !!user,
+  });
+
+  // Fetch this user's existing provider identities
+  const { data: identitiesData, isLoading: identitiesLoading } = useQuery({
+    queryKey: ["identities", user?.id],
+    queryFn: () => api.identities.listForUser(user?.id ?? ""),
+    enabled: !!user,
+  });
+
+  const connectors = connectorsData?.connectors ?? [];
+  const identities = identitiesData?.identities ?? [];
+
+  // Only show providers that have at least one connected integration
+  const connectedProviders = [...new Set(connectors.map((c) => c.connectorType))];
+
+  return (
+    <Dialog open={!!user} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Link accounts</DialogTitle>
+          <DialogDescription>
+            Map {user?.name}'s accounts in connected integrations. This controls which files they can access.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-2">
+          {identitiesLoading ? (
+            <div className="space-y-3">
+              {[1, 2].map((i) => (
+                <Skeleton key={i} className="h-16 rounded-lg" />
+              ))}
+            </div>
+          ) : connectedProviders.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border py-8 text-center">
+              <p className="text-sm text-muted-foreground">No integrations connected yet.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Connect an integration first to link user accounts.</p>
+            </div>
+          ) : (
+            connectedProviders.map((provider) => {
+              const existing = identities.find((i) => i.provider === provider);
+              return (
+                <ProviderLinkRow
+                  key={provider}
+                  provider={provider}
+                  userId={user?.id ?? ""}
+                  existing={existing ?? null}
+                  onSuccess={() => {
+                    queryClient.invalidateQueries({ queryKey: ["identities", user?.id] });
+                  }}
+                />
+              );
+            })
+          )}
+        </div>
+
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline">Done</Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** A single provider row inside the LinkProviderDialog. */
+function ProviderLinkRow({
+  provider,
+  userId,
+  existing,
+  onSuccess,
+}: {
+  provider: string;
+  userId: string;
+  existing: ProviderIdentity | null;
+  onSuccess: () => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [providerUserId, setProviderUserId] = useState("");
+  const [providerEmail, setProviderEmail] = useState("");
+
+  const integration = getIntegration(provider as Parameters<typeof getIntegration>[0]);
+  const displayName = integration?.name ?? provider;
+  const color = integration?.color ?? "#888";
+
+  const connectMutation = useMutation({
+    mutationFn: () =>
+      api.identities.connect({
+        userId,
+        provider,
+        providerUserId: providerUserId.trim(),
+        providerEmail: providerEmail.trim() || null,
+      }),
+    onSuccess: () => {
+      toast.success(`${displayName} account linked`);
+      setIsEditing(false);
+      setProviderUserId("");
+      setProviderEmail("");
+      onSuccess();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => api.identities.disconnect(userId, provider),
+    onSuccess: () => {
+      toast.success(`${displayName} account unlinked`);
+      onSuccess();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  if (existing && !isEditing) {
+    return (
+      <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-3">
+        <span style={{ color }}>
+          <ConnectorLogo type={provider} size={18} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">{displayName}</p>
+          <p className="truncate text-xs text-muted-foreground">{existing.providerEmail ?? existing.providerUserId}</p>
+        </div>
+        <Badge variant="outline" className="text-[10px] text-green-500 border-green-500/30">
+          Linked
+        </Badge>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground hover:text-destructive"
+          onClick={() => disconnectMutation.mutate()}
+          disabled={disconnectMutation.isPending}
+        >
+          <XIcon size={14} />
+        </Button>
+      </div>
+    );
+  }
+
+  if (isEditing) {
+    return (
+      <div className="rounded-lg border border-border bg-card px-3 py-3">
+        <div className="flex items-center gap-2 mb-3">
+          <span style={{ color }}>
+            <ConnectorLogo type={provider} size={18} />
+          </span>
+          <p className="text-sm font-medium">{displayName}</p>
+        </div>
+        <div className="space-y-2">
+          <div className="space-y-1">
+            <Label htmlFor={`link-${provider}-id`} className="text-xs">
+              User ID
+            </Label>
+            <Input
+              id={`link-${provider}-id`}
+              value={providerUserId}
+              onChange={(e) => setProviderUserId(e.target.value)}
+              placeholder={getProviderIdPlaceholder(provider)}
+              className="h-8 text-sm"
+              disabled={connectMutation.isPending}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor={`link-${provider}-email`} className="text-xs">
+              Email <span className="text-muted-foreground">(optional)</span>
+            </Label>
+            <Input
+              id={`link-${provider}-email`}
+              value={providerEmail}
+              onChange={(e) => setProviderEmail(e.target.value)}
+              placeholder="user@example.com"
+              className="h-8 text-sm"
+              disabled={connectMutation.isPending}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                setIsEditing(false);
+                setProviderUserId("");
+                setProviderEmail("");
+              }}
+              disabled={connectMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => connectMutation.mutate()}
+              disabled={!providerUserId.trim() || connectMutation.isPending}
+            >
+              {connectMutation.isPending ? <SpinnerGapIcon size={12} className="animate-spin" /> : "Link"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-dashed border-border px-3 py-3">
+      <span style={{ color }} className="opacity-50">
+        <ConnectorLogo type={provider} size={18} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-muted-foreground">{displayName}</p>
+        <p className="text-xs text-muted-foreground/70">Not linked</p>
+      </div>
+      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setIsEditing(true)}>
+        Link
+      </Button>
+    </div>
+  );
+}
+
+function getProviderIdPlaceholder(provider: string): string {
+  switch (provider) {
+    case "clickup":
+      return "ClickUp user ID (numeric)";
+    case "google_drive":
+      return "Google user ID or email";
+    case "linear":
+      return "Linear user ID";
+    case "notion":
+      return "Notion user ID";
+    default:
+      return "Provider user ID";
+  }
 }
 
 function getInitials(name: string): string {
