@@ -41,6 +41,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  ArrowSquareOutIcon,
   CheckIcon,
   DotsThreeIcon,
   EyeIcon,
@@ -119,6 +120,13 @@ type IntegrationProvider = {
   type: "canvas" | "composio";
   status: "connected" | "not_connected" | "key_expired";
 } | null;
+
+/** Navigation state for the provider connection flow */
+type ProviderFlow =
+  | null
+  | { step: "selector" }
+  | { step: "canvas"; reconnect?: boolean }
+  | { step: "coming-soon"; provider: "composio" | "nango" };
 
 interface CatalogApp {
   id: string;
@@ -495,8 +503,7 @@ export function ConnectionsPage() {
   const [editingMcp, setEditingMcp] = useState<McpServer | null>(null);
   const [removingMcp, setRemovingMcp] = useState<McpServer | null>(null);
   const [viewingMcpTools, setViewingMcpTools] = useState<McpServer | null>(null);
-  const [showConnectProviderDialog, setShowConnectProviderDialog] = useState<"canvas" | "composio" | null>(null);
-  const [reconnectProvider, setReconnectProvider] = useState(false);
+  const [providerFlow, setProviderFlow] = useState<ProviderFlow>(null);
   const [managingIntegration, setManagingIntegration] = useState<Integration | null>(null);
   const [showAddIntegrationDialog, setShowAddIntegrationDialog] = useState(false);
   const [connectingExisting, setConnectingExisting] = useState<Integration | null>(null);
@@ -555,14 +562,12 @@ export function ConnectionsPage() {
 
   const handleProviderConnected = (type: "canvas" | "composio") => {
     setProvider({ type, status: "connected" });
-    setShowConnectProviderDialog(null);
-    setReconnectProvider(false);
+    setProviderFlow(null);
     toast.success(`${type === "canvas" ? "Canvas" : "Composio"} connected`);
   };
 
   const handleReconnect = () => {
-    setReconnectProvider(true);
-    setShowConnectProviderDialog("canvas");
+    setProviderFlow({ step: "canvas", reconnect: true });
   };
 
   const handleAddMcp = (server: Omit<McpServer, "id" | "status" | "toolCount" | "isIntegrationProvider">) => {
@@ -674,7 +679,7 @@ export function ConnectionsPage() {
           <>
             {/* Integration provider CTA or integrations list */}
             {!provider ? (
-              <IntegrationProviderBanner onConnect={() => setShowConnectProviderDialog("canvas")} />
+              <IntegrationProviderBanner onConnect={() => setProviderFlow({ step: "selector" })} />
             ) : (
               <>
                 {isDegraded && <DegradedProviderBanner provider={provider} onReconnect={handleReconnect} />}
@@ -703,17 +708,27 @@ export function ConnectionsPage() {
         )}
       </div>
 
-      {/* Dialogs */}
-      <ConnectProviderDialog
-        type={showConnectProviderDialog}
-        reconnect={reconnectProvider}
-        onOpenChange={(open) => {
-          if (!open) {
-            setShowConnectProviderDialog(null);
-            setReconnectProvider(false);
-          }
-        }}
-        onConnected={handleProviderConnected}
+      {/* Provider flow modals */}
+      <ProviderSelectorModal
+        open={providerFlow?.step === "selector"}
+        onOpenChange={(open) => !open && setProviderFlow(null)}
+        onSelectCanvas={() => setProviderFlow({ step: "canvas" })}
+        onSelectComingSoon={(p) => setProviderFlow({ step: "coming-soon", provider: p })}
+      />
+
+      <ConnectCanvasModal
+        open={providerFlow?.step === "canvas"}
+        reconnect={providerFlow?.step === "canvas" ? (providerFlow.reconnect ?? false) : false}
+        onOpenChange={(open) => !open && setProviderFlow(null)}
+        onBack={() => setProviderFlow({ step: "selector" })}
+        onConnected={() => handleProviderConnected("canvas")}
+      />
+
+      <ComingSoonModal
+        open={providerFlow?.step === "coming-soon"}
+        provider={providerFlow?.step === "coming-soon" ? providerFlow.provider : "composio"}
+        onOpenChange={(open) => !open && setProviderFlow(null)}
+        onBack={() => setProviderFlow({ step: "selector" })}
       />
 
       <AddMcpDialog open={showAddMcpDialog} onOpenChange={setShowAddMcpDialog} onAdd={handleAddMcp} />
@@ -1061,28 +1076,120 @@ function McpEmptyState({ onAdd }: { onAdd: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Connect Provider Dialog (Canvas / Composio)
+// Provider Selector Modal — choose Canvas, Composio, or Nango
 // ---------------------------------------------------------------------------
 
-function ConnectProviderDialog({
-  type,
+const PROVIDER_CARDS = [
+  {
+    id: "canvas" as const,
+    name: "Canvas",
+    description: "Per-user OAuth for 2,700+ services. Each team member connects their own accounts securely.",
+    color: "#6B7DFA",
+    icon: "CV",
+    available: true,
+  },
+  {
+    id: "composio" as const,
+    name: "Composio",
+    description: "AI-native integration toolkit with 250+ tools. Built for agentic workflows.",
+    color: "#1F1F1F",
+    icon: "CO",
+    available: false,
+  },
+  {
+    id: "nango" as const,
+    name: "Nango",
+    description: "Open-source unified API for 250+ integrations. Self-hostable.",
+    color: "#0C4A6E",
+    icon: "NG",
+    available: false,
+  },
+] as const;
+
+function ProviderSelectorModal({
+  open,
+  onOpenChange,
+  onSelectCanvas,
+  onSelectComingSoon,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelectCanvas: () => void;
+  onSelectComingSoon: (provider: "composio" | "nango") => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Connect a provider</DialogTitle>
+          <DialogDescription>
+            Choose an integration provider to enable per-user app connections for your workspace.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-2 py-2">
+          {PROVIDER_CARDS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => {
+                if (p.available) onSelectCanvas();
+                else onSelectComingSoon(p.id as "composio" | "nango");
+              }}
+              className="group flex w-full items-center gap-4 rounded-lg border border-border p-4 text-left transition-colors hover:bg-muted/50"
+            >
+              <div
+                className="flex size-10 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
+                style={{ backgroundColor: p.color }}
+              >
+                {p.icon}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold">{p.name}</p>
+                  {p.available ? (
+                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[10px] px-1.5 py-0">
+                      Available
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                      Coming soon
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground">{p.description}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Connect Canvas Modal — steps + API key input
+// ---------------------------------------------------------------------------
+
+function ConnectCanvasModal({
+  open,
   reconnect,
   onOpenChange,
+  onBack,
   onConnected,
 }: {
-  type: "canvas" | "composio" | null;
-  reconnect?: boolean;
+  open: boolean;
+  reconnect: boolean;
   onOpenChange: (open: boolean) => void;
-  onConnected: (type: "canvas" | "composio") => void;
+  onBack: () => void;
+  onConnected: () => void;
 }) {
   const [apiKey, setApiKey] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const label = type === "canvas" ? "Canvas" : "Composio";
-
   const handleConnect = async () => {
-    if (!type || !apiKey.trim()) return;
+    if (!apiKey.trim()) return;
     setError(null);
     setIsConnecting(true);
     await new Promise((resolve) => setTimeout(resolve, 800));
@@ -1094,43 +1201,87 @@ function ConnectProviderDialog({
     setIsConnecting(false);
     setApiKey("");
     setError(null);
-    onConnected(type);
+    onConnected();
   };
 
-  const handleOpenChange = (open: boolean) => {
-    if (!open) {
+  const handleOpenChange = (next: boolean) => {
+    if (!next) {
       setApiKey("");
       setIsConnecting(false);
       setError(null);
     }
-    onOpenChange(open);
+    onOpenChange(next);
   };
 
+  const STEPS = [
+    {
+      num: 1,
+      text: (
+        <>
+          Go to{" "}
+          <a
+            href="https://usecanvas.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+          >
+            usecanvas.dev
+            <ArrowSquareOutIcon size={12} />
+          </a>
+        </>
+      ),
+    },
+    { num: 2, text: "Create an account or sign in" },
+    { num: 3, text: "Navigate to API Keys" },
+    { num: 4, text: "Copy your API key" },
+  ];
+
   return (
-    <Dialog open={type !== null} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {reconnect ? "Reconnect" : "Connect"} {label}
+          <DialogTitle className="flex items-center gap-3">
+            <div className="flex size-8 items-center justify-center rounded-lg text-[10px] font-bold text-white bg-[#6B7DFA]">
+              CV
+            </div>
+            {reconnect ? "Reconnect Canvas" : "Connect Canvas"}
           </DialogTitle>
           <DialogDescription>
             {reconnect
-              ? `Your ${label} API key has expired. Enter a new key to restore integrations.`
-              : `${label} provides per-user OAuth for 2,700+ services. Each team member connects their own accounts.`}
+              ? "Your Canvas API key has expired. Enter a new key to restore integrations."
+              : "Canvas provides per-user OAuth for 2,700+ services."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {/* Steps card */}
+          <div className="rounded-lg border border-border bg-muted/30 p-4">
+            <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">
+              How to get your API key
+            </p>
+            <ol className="space-y-2.5">
+              {STEPS.map((s) => (
+                <li key={s.num} className="flex items-start gap-3">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+                    {s.num}
+                  </span>
+                  <span className="text-sm text-foreground/80">{s.text}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          {/* API key input */}
           <div className="space-y-1.5">
-            <Label htmlFor="provider-api-key">API Key</Label>
+            <Label htmlFor="canvas-api-key">API Key</Label>
             <Input
-              id="provider-api-key"
+              id="canvas-api-key"
               value={apiKey}
               onChange={(e) => {
                 setApiKey(e.target.value);
                 if (error) setError(null);
               }}
-              placeholder={type === "canvas" ? "cvs_..." : "cmp_..."}
+              placeholder="cvs_..."
               disabled={isConnecting}
               className={`font-mono text-xs ${error ? "border-destructive" : ""}`}
             />
@@ -1138,12 +1289,19 @@ function ConnectProviderDialog({
           </div>
         </div>
 
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline" disabled={isConnecting}>
-              Cancel
-            </Button>
-          </DialogClose>
+        <div className="flex items-center justify-between pt-2">
+          {!reconnect ? (
+            <button
+              type="button"
+              onClick={onBack}
+              disabled={isConnecting}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+            >
+              Previous
+            </button>
+          ) : (
+            <div />
+          )}
           <Button onClick={handleConnect} disabled={!apiKey.trim() || isConnecting}>
             {isConnecting ? (
               <>
@@ -1154,7 +1312,92 @@ function ConnectProviderDialog({
               "Connect"
             )}
           </Button>
-        </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Coming Soon Modal — for Composio and Nango
+// ---------------------------------------------------------------------------
+
+const COMING_SOON_INFO: Record<
+  "composio" | "nango",
+  { name: string; color: string; icon: string; description: string; detail: string; url: string }
+> = {
+  composio: {
+    name: "Composio",
+    color: "#1F1F1F",
+    icon: "CO",
+    description: "AI-native integration toolkit with 250+ tools built for agentic workflows.",
+    detail: "Composio support is on our roadmap. We're working on deep integration with their agent-first API.",
+    url: "https://github.com/canvasxai/sketch",
+  },
+  nango: {
+    name: "Nango",
+    color: "#0C4A6E",
+    icon: "NG",
+    description: "Open-source unified API for 250+ integrations. Self-hostable and extensible.",
+    detail: "Nango support is on our roadmap. We're exploring their open-source API for self-hosted deployments.",
+    url: "https://github.com/canvasxai/sketch",
+  },
+};
+
+function ComingSoonModal({
+  open,
+  provider,
+  onOpenChange,
+  onBack,
+}: {
+  open: boolean;
+  provider: "composio" | "nango";
+  onOpenChange: (open: boolean) => void;
+  onBack: () => void;
+}) {
+  const info = COMING_SOON_INFO[provider];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-3">
+            <div
+              className="flex size-8 items-center justify-center rounded-lg text-[10px] font-bold text-white"
+              style={{ backgroundColor: info.color }}
+            >
+              {info.icon}
+            </div>
+            {info.name}
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+              Coming soon
+            </Badge>
+          </DialogTitle>
+          <DialogDescription>{info.description}</DialogDescription>
+        </DialogHeader>
+
+        <div className="py-2">
+          <div className="rounded-lg border border-border bg-muted/30 p-4">
+            <p className="text-sm text-foreground/80">{info.detail}</p>
+            <p className="mt-3 text-xs text-muted-foreground">Want to help? Contributions are welcome.</p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Previous
+          </button>
+          <Button variant="outline" asChild>
+            <a href={info.url} target="_blank" rel="noopener noreferrer" className="gap-1.5">
+              <ArrowSquareOutIcon size={14} />
+              Contribute on GitHub
+            </a>
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

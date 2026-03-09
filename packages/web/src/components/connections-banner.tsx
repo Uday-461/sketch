@@ -445,7 +445,7 @@ export function ConnectionsBanner({ onConnect }: { onConnect: () => void }) {
             }}
           >
             <span className="text-[#818cf8] group-hover:text-white transition-colors duration-200 text-[13.5px] font-semibold">
-              Connect Canvas
+              Connect
             </span>
             <span className="text-[#818cf8] group-hover:text-white transition-all duration-200 text-[16px] ml-[6px] group-hover:ml-[10px]">
               &rarr;
