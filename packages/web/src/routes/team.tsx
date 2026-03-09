@@ -31,6 +31,7 @@ import type { User } from "@/lib/api";
 import { api } from "@/lib/api";
 import {
   DotsThreeIcon,
+  EnvelopeIcon,
   PencilSimpleIcon,
   PlusIcon,
   SlackLogoIcon,
@@ -39,11 +40,24 @@ import {
   UsersThreeIcon,
   WhatsappLogoIcon,
 } from "@phosphor-icons/react";
+import { emailSchema, whatsappNumberSchema } from "@sketch/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { z } from "zod";
 import { dashboardRoute } from "./dashboard";
+
+const addMemberSchema = z.object({
+  name: z.string().min(1),
+  whatsappNumber: whatsappNumberSchema,
+});
+
+const editMemberSchema = z.object({
+  name: z.string().min(1),
+  email: z.union([z.literal(""), emailSchema]),
+  whatsappNumber: z.union([z.literal(""), whatsappNumberSchema]),
+});
 
 export const teamRoute = createRoute({
   getParentRoute: () => dashboardRoute,
@@ -180,13 +194,19 @@ function MemberRow({
             icon={<SlackLogoIcon size={16} />}
             active={!!user.slack_user_id}
             tooltip={user.slack_user_id ? "Slack connected" : "Slack not connected"}
-            activeColor="#E01E5A"
+            activeColor="#4A154B"
           />
           <ChannelBadge
             icon={<WhatsappLogoIcon size={16} />}
             active={!!user.whatsapp_number}
             tooltip={user.whatsapp_number ? "WhatsApp connected" : "WhatsApp not connected"}
             activeColor="#25D366"
+          />
+          <ChannelBadge
+            icon={<EnvelopeIcon size={16} />}
+            active={!!user.email}
+            tooltip={user.email ? "Email added" : "Email not added"}
+            activeColor="#0072FC"
           />
         </div>
       </TooltipProvider>
@@ -312,7 +332,7 @@ function AddMemberDialog({
     onOpenChange(false);
   };
 
-  const canSubmit = name.trim().length > 0 && phone.trim().startsWith("+") && phone.trim().length >= 8;
+  const canSubmit = addMemberSchema.safeParse({ name: name.trim(), whatsappNumber: phone.trim() }).success;
 
   return (
     <Dialog
@@ -387,12 +407,14 @@ function EditMemberDialog({
   onSuccess: () => void;
 }) {
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (user) {
       setName(user.name);
+      setEmail(user.email ?? "");
       setPhone(user.whatsapp_number ?? "");
       setError("");
     }
@@ -402,6 +424,7 @@ function EditMemberDialog({
     mutationFn: () =>
       api.users.update(user?.id ?? "", {
         name: name.trim(),
+        email: email.trim() || null,
         whatsappNumber: phone.trim() || null,
       }),
     onSuccess: () => {
@@ -417,9 +440,14 @@ function EditMemberDialog({
     },
   });
 
-  const isDirty = user && (name.trim() !== user.name || (phone.trim() || null) !== (user.whatsapp_number ?? null));
+  const isDirty =
+    user &&
+    (name.trim() !== user.name ||
+      (email.trim() || null) !== (user.email ?? null) ||
+      (phone.trim() || null) !== (user.whatsapp_number ?? null));
   const canSubmit =
-    isDirty && name.trim().length > 0 && (!phone.trim() || (phone.trim().startsWith("+") && phone.trim().length >= 8));
+    isDirty &&
+    editMemberSchema.safeParse({ name: name.trim(), email: email.trim(), whatsappNumber: phone.trim() }).success;
 
   return (
     <Dialog open={!!user} onOpenChange={onOpenChange}>
@@ -436,6 +464,18 @@ function EditMemberDialog({
               id="edit-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              disabled={updateMutation.isPending}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-email">Email</Label>
+            <Input
+              id="edit-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
               disabled={updateMutation.isPending}
             />
           </div>
