@@ -62,8 +62,11 @@ export function createApp(db: Kysely<DB>, config: Config, deps?: AppDeps) {
   }
 
   // Static file serving for the SPA (production only — dev uses Vite dev server)
-  // Resolve path relative to this file's location (works with both tsx and tsdown bundle)
-  const webDistDir = resolve(import.meta.dirname, "../../web/dist");
+  // In production, web assets are copied into dist/public/ alongside the server bundle.
+  // In dev (tsx), fall back to the monorepo path.
+  const bundledDir = resolve(import.meta.dirname, "public");
+  const monorepoDir = resolve(import.meta.dirname, "../../web/dist");
+  const webDistDir = existsSync(bundledDir) ? bundledDir : monorepoDir;
 
   if (existsSync(webDistDir)) {
     // Serve hashed assets (JS, CSS, images)
