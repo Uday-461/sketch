@@ -1070,7 +1070,7 @@ function ProviderSelectorModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:h-[600px] sm:max-h-[600px]">
         <DialogHeader>
           <DialogTitle>Connect a provider</DialogTitle>
           <DialogDescription>
@@ -1187,7 +1187,7 @@ function ConnectCanvasModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent showCloseButton={reconnect}>
+      <DialogContent className="sm:h-[600px] sm:max-h-[600px]" showCloseButton={reconnect}>
         {!reconnect && <DialogBackRow label="Choose provider" onBack={onBack} />}
 
         <DialogHeader>
@@ -1308,7 +1308,7 @@ function ComingSoonModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false}>
+      <DialogContent className="sm:h-[600px] sm:max-h-[600px]" showCloseButton={false}>
         <DialogBackRow label="Choose provider" onBack={onBack} />
 
         <DialogHeader>
@@ -1973,7 +1973,7 @@ function AddIntegrationDialog({
         else onOpenChange(next);
       }}
     >
-      <DialogContent>
+      <DialogContent className="sm:h-[600px] sm:max-h-[600px]">
         {step.kind === "search" && (
           <>
             <DialogHeader>
