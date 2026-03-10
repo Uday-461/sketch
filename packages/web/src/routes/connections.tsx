@@ -1247,9 +1247,7 @@ function ConnectCanvasModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-[#6B7DFA]">
-              <img src={theme === "dark" ? "/logos/canvas-dark.png" : "/logos/canvas-light.png"} alt="Canvas" className="size-4 object-contain" />
-            </div>
+            <img src={theme === "dark" ? "/logos/canvas-dark.png" : "/logos/canvas-light.png"} alt="Canvas" className="size-8 rounded-lg object-contain" />
             {reconnect ? "Reconnect Canvas" : "Connect Canvas"}
           </DialogTitle>
           <DialogDescription>
@@ -1376,9 +1374,7 @@ function ComingSoonModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <div className="flex size-8 items-center justify-center rounded-lg" style={{ backgroundColor: info.color }}>
-              <img src={info.logo[theme]} alt={info.name} className="size-4 object-contain" />
-            </div>
+            <img src={info.logo[theme]} alt={info.name} className="size-8 rounded-lg object-contain" />
             {info.name}
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
               Coming soon
