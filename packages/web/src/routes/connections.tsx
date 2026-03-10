@@ -1070,7 +1070,7 @@ function ProviderSelectorModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:h-[600px] sm:max-h-[600px]">
+      <DialogContent className="flex flex-col overflow-hidden sm:h-[600px] sm:max-h-[600px]">
         <DialogHeader>
           <DialogTitle>Connect a provider</DialogTitle>
           <DialogDescription>
@@ -1078,37 +1078,41 @@ function ProviderSelectorModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2 py-2">
-          {PROVIDER_CARDS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => {
-                if (p.available) onSelectCanvas();
-                else onSelectComingSoon(p.id as "composio" | "nango");
-              }}
-              className="group flex w-full items-center gap-4 rounded-lg border border-border p-4 text-left transition-colors hover:bg-[#F7F7FA] hover:border-[#C8C8D2] dark:hover:bg-[#282829] dark:hover:border-[#6A6A6E]"
-            >
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg">
-                <img src={p.logo[theme]} alt={p.name} className="size-10 rounded-lg object-contain" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold">{p.name}</p>
-                  {p.available ? (
-                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[10px] px-1.5 py-0">
-                      Available
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                      Coming soon
-                    </Badge>
-                  )}
-                </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">{p.description}</p>
-              </div>
-            </button>
-          ))}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex min-h-full flex-col justify-center">
+            <div className="space-y-2">
+              {PROVIDER_CARDS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    if (p.available) onSelectCanvas();
+                    else onSelectComingSoon(p.id as "composio" | "nango");
+                  }}
+                  className="group flex w-full items-center gap-4 rounded-lg border border-border p-4 text-left transition-colors hover:bg-[#F7F7FA] hover:border-[#C8C8D2] dark:hover:bg-[#282829] dark:hover:border-[#6A6A6E]"
+                >
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg">
+                    <img src={p.logo[theme]} alt={p.name} className="size-10 rounded-lg object-contain" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold">{p.name}</p>
+                      {p.available ? (
+                        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[10px] px-1.5 py-0">
+                          Available
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          Coming soon
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{p.description}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -1187,7 +1191,10 @@ function ConnectCanvasModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:h-[600px] sm:max-h-[600px]" showCloseButton={reconnect}>
+      <DialogContent
+        className="flex flex-col overflow-hidden sm:h-[600px] sm:max-h-[600px]"
+        showCloseButton={reconnect}
+      >
         {!reconnect && <DialogBackRow label="Choose provider" onBack={onBack} />}
 
         <DialogHeader>
@@ -1206,39 +1213,43 @@ function ConnectCanvasModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {/* Steps card */}
-          <div className="rounded-lg border border-border bg-muted/30 p-4">
-            <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">
-              How to get your API key
-            </p>
-            <ol className="space-y-2.5">
-              {STEPS.map((s) => (
-                <li key={s.num} className="flex items-start gap-3">
-                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
-                    {s.num}
-                  </span>
-                  <span className="text-sm text-foreground/80">{s.text}</span>
-                </li>
-              ))}
-            </ol>
-          </div>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex min-h-full flex-col justify-center">
+            <div className="space-y-4">
+              {/* Steps card */}
+              <div className="rounded-lg border border-border bg-muted/30 p-4">
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">
+                  How to get your API key
+                </p>
+                <ol className="space-y-2.5">
+                  {STEPS.map((s) => (
+                    <li key={s.num} className="flex items-start gap-3">
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+                        {s.num}
+                      </span>
+                      <span className="text-sm text-foreground/80">{s.text}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
 
-          {/* API key input */}
-          <div className="space-y-1.5">
-            <Label htmlFor="canvas-api-key">API Key</Label>
-            <Input
-              id="canvas-api-key"
-              value={apiKey}
-              onChange={(e) => {
-                setApiKey(e.target.value);
-                if (error) setError(null);
-              }}
-              placeholder="cvs_..."
-              disabled={isConnecting}
-              className={`font-mono text-xs focus-visible:ring-0 ${error ? "border-destructive" : ""}`}
-            />
-            {error && <p className="text-xs text-destructive">{error}</p>}
+              {/* API key input */}
+              <div className="space-y-1.5">
+                <Label htmlFor="canvas-api-key">API Key</Label>
+                <Input
+                  id="canvas-api-key"
+                  value={apiKey}
+                  onChange={(e) => {
+                    setApiKey(e.target.value);
+                    if (error) setError(null);
+                  }}
+                  placeholder="cvs_..."
+                  disabled={isConnecting}
+                  className={`font-mono text-xs focus-visible:ring-0 ${error ? "border-destructive" : ""}`}
+                />
+                {error && <p className="text-xs text-destructive">{error}</p>}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1308,7 +1319,7 @@ function ComingSoonModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:h-[600px] sm:max-h-[600px]" showCloseButton={false}>
+      <DialogContent className="flex flex-col overflow-hidden sm:h-[600px] sm:max-h-[600px]" showCloseButton={false}>
         <DialogBackRow label="Choose provider" onBack={onBack} />
 
         <DialogHeader>
@@ -1322,10 +1333,12 @@ function ComingSoonModal({
           <DialogDescription>{info.description}</DialogDescription>
         </DialogHeader>
 
-        <div className="py-2">
-          <div className="rounded-lg border border-border bg-muted/30 p-4">
-            <p className="text-sm text-foreground/80">{info.detail}</p>
-            <p className="mt-3 text-xs text-muted-foreground">Want to help? Contributions are welcome.</p>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex min-h-full flex-col justify-center">
+            <div className="rounded-lg border border-border bg-muted/30 p-4">
+              <p className="text-sm text-foreground/80">{info.detail}</p>
+              <p className="mt-3 text-xs text-muted-foreground">Want to help? Contributions are welcome.</p>
+            </div>
           </div>
         </div>
 
@@ -1973,7 +1986,7 @@ function AddIntegrationDialog({
         else onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:h-[600px] sm:max-h-[600px]">
+      <DialogContent className="flex flex-col overflow-hidden sm:h-[600px] sm:max-h-[600px]">
         {step.kind === "search" && (
           <>
             <DialogHeader>
@@ -1981,7 +1994,7 @@ function AddIntegrationDialog({
               <DialogDescription>Search from 2,700+ apps available via Canvas.</DialogDescription>
             </DialogHeader>
 
-            <div className="py-2">
+            <div>
               <div className="relative">
                 <MagnifyingGlassIcon
                   size={16}
@@ -1997,7 +2010,7 @@ function AddIntegrationDialog({
               </div>
             </div>
 
-            <div className="max-h-[50vh] overflow-y-auto -mx-6 px-6">
+            <div className="flex-1 min-h-0 overflow-y-auto -mx-6 px-6">
               {filteredCatalog.length === 0 ? (
                 <div className="flex flex-col items-center py-10 text-center">
                   <p className="text-sm text-muted-foreground">No integrations found for &ldquo;{search}&rdquo;</p>
@@ -2067,19 +2080,21 @@ function AddIntegrationDialog({
               <DialogDescription>Authorising via OAuth — opens in a popup window.</DialogDescription>
             </DialogHeader>
 
-            <div className="py-6">
-              <div className="rounded-lg border border-border bg-muted/30 p-6">
-                <div className="flex flex-col items-center text-center">
-                  <div
-                    className="flex size-14 items-center justify-center rounded-xl text-lg font-bold text-white"
-                    style={{ backgroundColor: step.app.color }}
-                  >
-                    {step.app.icon}
-                  </div>
-                  <p className="mt-4 text-sm font-medium">Authorize Sketch to access {step.app.name}</p>
-                  <div className="mt-5 flex items-center gap-2">
-                    <SpinnerGapIcon size={16} className="animate-spin text-primary" />
-                    <span className="text-sm text-muted-foreground">Waiting for authorisation…</span>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="flex min-h-full flex-col justify-center">
+                <div className="rounded-lg border border-border bg-muted/30 p-6">
+                  <div className="flex flex-col items-center text-center">
+                    <div
+                      className="flex size-14 items-center justify-center rounded-xl text-lg font-bold text-white"
+                      style={{ backgroundColor: step.app.color }}
+                    >
+                      {step.app.icon}
+                    </div>
+                    <p className="mt-4 text-sm font-medium">Authorize Sketch to access {step.app.name}</p>
+                    <div className="mt-5 flex items-center gap-2">
+                      <SpinnerGapIcon size={16} className="animate-spin text-primary" />
+                      <span className="text-sm text-muted-foreground">Waiting for authorisation…</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2101,6 +2116,7 @@ function AddIntegrationDialog({
               </DialogDescription>
             </DialogHeader>
 
+            <div className="flex-1" />
             <DialogFooter>
               <Button onClick={() => handleStartOAuth(step.app)}>Try again</Button>
             </DialogFooter>
@@ -2121,6 +2137,7 @@ function AddIntegrationDialog({
               </DialogDescription>
             </DialogHeader>
 
+            <div className="flex-1" />
             <DialogFooter>
               <Button onClick={() => handleStartOAuth(step.app)}>Try again</Button>
             </DialogFooter>
@@ -2139,38 +2156,42 @@ function AddIntegrationDialog({
               <DialogDescription>{step.app.defaultTools.length} tools are now available.</DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 py-4">
-              <div className="rounded-lg border border-border bg-muted/30 p-4">
-                <p className="mb-2 text-xs font-medium text-muted-foreground">Available tools</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {step.app.defaultTools.map((tool) => (
-                    <span
-                      key={tool.id}
-                      className="rounded-md bg-muted px-2 py-1 text-xs font-mono text-muted-foreground"
-                    >
-                      {tool.name}
-                    </span>
-                  ))}
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="flex min-h-full flex-col justify-center">
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-border bg-muted/30 p-4">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">Available tools</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {step.app.defaultTools.map((tool) => (
+                        <span
+                          key={tool.id}
+                          className="rounded-md bg-muted px-2 py-1 text-xs font-mono text-muted-foreground"
+                        >
+                          {tool.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Admin only: use my account for all */}
+                  {isAdmin && (
+                    <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-4">
+                      <input
+                        type="checkbox"
+                        checked={useSharedAccount}
+                        onChange={(e) => setUseSharedAccount(e.target.checked)}
+                        className="mt-0.5 size-4 rounded border-border accent-primary"
+                      />
+                      <div>
+                        <p className="text-sm font-medium">Use my account for all workspace members</p>
+                        <p className="text-xs text-muted-foreground">
+                          The agent will use your credentials when acting on behalf of any team member.
+                        </p>
+                      </div>
+                    </label>
+                  )}
                 </div>
               </div>
-
-              {/* Admin only: use my account for all */}
-              {isAdmin && (
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-4">
-                  <input
-                    type="checkbox"
-                    checked={useSharedAccount}
-                    onChange={(e) => setUseSharedAccount(e.target.checked)}
-                    className="mt-0.5 size-4 rounded border-border accent-primary"
-                  />
-                  <div>
-                    <p className="text-sm font-medium">Use my account for all workspace members</p>
-                    <p className="text-xs text-muted-foreground">
-                      The agent will use your credentials when acting on behalf of any team member.
-                    </p>
-                  </div>
-                </label>
-              )}
             </div>
 
             <DialogFooter>
