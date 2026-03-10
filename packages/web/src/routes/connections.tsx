@@ -56,6 +56,7 @@ import {
   WarningIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
+import { useTheme } from "@/hooks/use-theme";
 import { createRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -1076,35 +1077,40 @@ function McpEmptyState({ onAdd }: { onAdd: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
+// Provider logos — inline SVGs for Canvas, Composio, Nango
+// ---------------------------------------------------------------------------
 // Provider Selector Modal — choose Canvas, Composio, or Nango
 // ---------------------------------------------------------------------------
 
-const PROVIDER_CARDS = [
+const PROVIDER_CARDS: {
+  id: "canvas" | "composio" | "nango";
+  name: string;
+  description: string;
+  logo: { light: string; dark: string };
+  available: boolean;
+}[] = [
   {
-    id: "canvas" as const,
+    id: "canvas",
     name: "Canvas",
     description: "Per-user OAuth for 2,700+ services. Each team member connects their own accounts securely.",
-    color: "#6B7DFA",
-    icon: "CV",
+    logo: { light: "/logos/canvas-light.png", dark: "/logos/canvas-dark.png" },
     available: true,
   },
   {
-    id: "composio" as const,
+    id: "composio",
     name: "Composio",
     description: "AI-native integration toolkit with 250+ tools. Built for agentic workflows.",
-    color: "#1F1F1F",
-    icon: "CO",
+    logo: { light: "/logos/composio-light.png", dark: "/logos/composio-dark.png" },
     available: false,
   },
   {
-    id: "nango" as const,
+    id: "nango",
     name: "Nango",
     description: "Open-source unified API for 250+ integrations. Self-hostable.",
-    color: "#0C4A6E",
-    icon: "NG",
+    logo: { light: "/logos/nango-light.png", dark: "/logos/nango-dark.png" },
     available: false,
   },
-] as const;
+];
 
 function ProviderSelectorModal({
   open,
@@ -1117,6 +1123,8 @@ function ProviderSelectorModal({
   onSelectCanvas: () => void;
   onSelectComingSoon: (provider: "composio" | "nango") => void;
 }) {
+  const { theme } = useTheme();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -1136,13 +1144,10 @@ function ProviderSelectorModal({
                 if (p.available) onSelectCanvas();
                 else onSelectComingSoon(p.id as "composio" | "nango");
               }}
-              className="group flex w-full items-center gap-4 rounded-lg border border-border p-4 text-left transition-colors hover:bg-muted/50"
+              className="group flex w-full items-center gap-4 rounded-lg border border-border p-4 text-left transition-colors hover:bg-[#F7F7FA] hover:border-[#C8C8D2] dark:hover:bg-[#282829] dark:hover:border-[#6A6A6E]"
             >
-              <div
-                className="flex size-10 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
-                style={{ backgroundColor: p.color }}
-              >
-                {p.icon}
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg">
+                <img src={p.logo[theme]} alt={p.name} className="size-10 rounded-lg object-contain" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -1184,6 +1189,7 @@ function ConnectCanvasModal({
   onBack: () => void;
   onConnected: () => void;
 }) {
+  const { theme } = useTheme();
   const [apiKey, setApiKey] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1241,8 +1247,8 @@ function ConnectCanvasModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <div className="flex size-8 items-center justify-center rounded-lg text-[10px] font-bold text-white bg-[#6B7DFA]">
-              CV
+            <div className="flex size-8 items-center justify-center rounded-lg bg-[#6B7DFA]">
+              <img src={theme === "dark" ? "/logos/canvas-dark.png" : "/logos/canvas-light.png"} alt="Canvas" className="size-4 object-contain" />
             </div>
             {reconnect ? "Reconnect Canvas" : "Connect Canvas"}
           </DialogTitle>
@@ -1324,20 +1330,27 @@ function ConnectCanvasModal({
 
 const COMING_SOON_INFO: Record<
   "composio" | "nango",
-  { name: string; color: string; icon: string; description: string; detail: string; url: string }
+  {
+    name: string;
+    color: string;
+    logo: { light: string; dark: string };
+    description: string;
+    detail: string;
+    url: string;
+  }
 > = {
   composio: {
     name: "Composio",
     color: "#1F1F1F",
-    icon: "CO",
+    logo: { light: "/logos/composio-light.png", dark: "/logos/composio-dark.png" },
     description: "AI-native integration toolkit with 250+ tools built for agentic workflows.",
     detail: "Composio support is on our roadmap. We're working on deep integration with their agent-first API.",
     url: "https://github.com/canvasxai/sketch",
   },
   nango: {
     name: "Nango",
-    color: "#0C4A6E",
-    icon: "NG",
+    color: "#1F1F1F",
+    logo: { light: "/logos/nango-light.png", dark: "/logos/nango-dark.png" },
     description: "Open-source unified API for 250+ integrations. Self-hostable and extensible.",
     detail: "Nango support is on our roadmap. We're exploring their open-source API for self-hosted deployments.",
     url: "https://github.com/canvasxai/sketch",
@@ -1355,6 +1368,7 @@ function ComingSoonModal({
   onOpenChange: (open: boolean) => void;
   onBack: () => void;
 }) {
+  const { theme } = useTheme();
   const info = COMING_SOON_INFO[provider];
 
   return (
@@ -1362,11 +1376,8 @@ function ComingSoonModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <div
-              className="flex size-8 items-center justify-center rounded-lg text-[10px] font-bold text-white"
-              style={{ backgroundColor: info.color }}
-            >
-              {info.icon}
+            <div className="flex size-8 items-center justify-center rounded-lg" style={{ backgroundColor: info.color }}>
+              <img src={info.logo[theme]} alt={info.name} className="size-4 object-contain" />
             </div>
             {info.name}
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
