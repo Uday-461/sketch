@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBackRow,
   DialogClose,
   DialogContent,
   DialogDescription,
@@ -40,6 +41,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTheme } from "@/hooks/use-theme";
 import {
   ArrowSquareOutIcon,
   CheckIcon,
@@ -56,7 +58,6 @@ import {
   WarningIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
-import { useTheme } from "@/hooks/use-theme";
 import { createRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -632,9 +633,7 @@ export function ConnectionsPage() {
   const handleDisconnectAll = (integrationId: string) => {
     const integration = integrations.find((i) => i.id === integrationId);
     setIntegrations((prev) =>
-      prev.map((i) =>
-        i.id === integrationId ? { ...i, connectedUsers: 0, userDetails: [] } : i,
-      ),
+      prev.map((i) => (i.id === integrationId ? { ...i, connectedUsers: 0, userDetails: [] } : i)),
     );
     setManagingIntegration(null);
     toast.success(`All members disconnected from ${integration?.service ?? "integration"}`);
@@ -738,7 +737,6 @@ export function ConnectionsPage() {
         isAdmin={isAdmin}
         onConnect={handleAddIntegration}
       />
-
     </div>
   );
 }
@@ -1189,10 +1187,16 @@ function ConnectCanvasModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" showCloseButton={reconnect}>
+        {!reconnect && <DialogBackRow label="Choose provider" onBack={onBack} />}
+
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
-            <img src={theme === "dark" ? "/logos/canvas-dark.png" : "/logos/canvas-light.png"} alt="Canvas" className="size-8 rounded-lg object-contain" />
+            <img
+              src={theme === "dark" ? "/logos/canvas-dark.png" : "/logos/canvas-light.png"}
+              alt="Canvas"
+              className="size-8 rounded-lg object-contain"
+            />
             {reconnect ? "Reconnect Canvas" : "Connect Canvas"}
           </DialogTitle>
           <DialogDescription>
@@ -1238,19 +1242,7 @@ function ConnectCanvasModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-between pt-2">
-          {!reconnect ? (
-            <button
-              type="button"
-              onClick={onBack}
-              disabled={isConnecting}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-            >
-              Previous
-            </button>
-          ) : (
-            <div />
-          )}
+        <DialogFooter>
           <Button onClick={handleConnect} disabled={!apiKey.trim() || isConnecting}>
             {isConnecting ? (
               <>
@@ -1261,7 +1253,7 @@ function ConnectCanvasModal({
               "Connect"
             )}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -1316,7 +1308,9 @@ function ComingSoonModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" showCloseButton={false}>
+        <DialogBackRow label="Choose provider" onBack={onBack} />
+
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <img src={info.logo[theme]} alt={info.name} className="size-8 rounded-lg object-contain" />
@@ -1335,21 +1329,14 @@ function ComingSoonModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-between pt-2">
-          <button
-            type="button"
-            onClick={onBack}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Previous
-          </button>
+        <DialogFooter>
           <Button variant="outline" asChild>
             <a href={info.url} target="_blank" rel="noopener noreferrer" className="gap-1.5">
               <ArrowSquareOutIcon size={14} />
               Contribute on GitHub
             </a>
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -1506,11 +1493,6 @@ function AddMcpDialog({
         </div>
 
         <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline" disabled={isAdding}>
-              Cancel
-            </Button>
-          </DialogClose>
           <Button onClick={handleAdd} disabled={!name.trim() || !url.trim() || isAdding}>
             {isAdding ? (
               <>
@@ -1670,11 +1652,6 @@ function EditMcpDialog({
         </div>
 
         <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline" disabled={isSaving}>
-              Cancel
-            </Button>
-          </DialogClose>
           <Button onClick={handleSave} disabled={!isDirty || !name.trim() || !url.trim() || isSaving}>
             {isSaving ? (
               <>
@@ -2072,12 +2049,6 @@ function AddIntegrationDialog({
                 ))
               )}
             </div>
-
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
-              </DialogClose>
-            </DialogFooter>
           </>
         )}
 
@@ -2113,12 +2084,6 @@ function AddIntegrationDialog({
                 </div>
               </div>
             </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={resetAndClose}>
-                Cancel
-              </Button>
-            </DialogFooter>
           </>
         )}
 
@@ -2137,9 +2102,6 @@ function AddIntegrationDialog({
             </DialogHeader>
 
             <DialogFooter>
-              <Button variant="outline" onClick={resetAndClose}>
-                Cancel
-              </Button>
               <Button onClick={() => handleStartOAuth(step.app)}>Try again</Button>
             </DialogFooter>
           </>
@@ -2160,9 +2122,6 @@ function AddIntegrationDialog({
             </DialogHeader>
 
             <DialogFooter>
-              <Button variant="outline" onClick={resetAndClose}>
-                Cancel
-              </Button>
               <Button onClick={() => handleStartOAuth(step.app)}>Try again</Button>
             </DialogFooter>
           </>
