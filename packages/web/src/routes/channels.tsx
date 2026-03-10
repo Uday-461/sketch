@@ -14,7 +14,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -310,17 +317,12 @@ function WhatsAppPairDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-w-sm"
-        showCloseButton={false}
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
-      >
+      <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Connect WhatsApp</DialogTitle>
           <DialogDescription>Scan this QR code with WhatsApp to connect your number.</DialogDescription>
         </DialogHeader>
-        {open && <WhatsAppQR onConnected={onConnected} onCancel={() => onOpenChange(false)} />}
+        {open && <WhatsAppQR onConnected={onConnected} />}
       </DialogContent>
     </Dialog>
   );
@@ -571,6 +573,9 @@ function EmailConfigDialog({
               Use TLS/SSL (recommended)
             </Label>
           </div>
+        </div>
+
+        <DialogFooter>
           <Button
             variant="outline"
             size="sm"
@@ -586,7 +591,7 @@ function EmailConfigDialog({
               "Connect"
             )}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -748,6 +753,9 @@ function SlackConnectDialog({
               className="font-mono text-xs"
             />
           </div>
+        </div>
+
+        <DialogFooter>
           <Button
             variant="outline"
             size="sm"
@@ -763,7 +771,7 @@ function SlackConnectDialog({
               "Connect"
             )}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
