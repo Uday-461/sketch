@@ -110,7 +110,6 @@ interface Integration {
   description: string;
   icon: string;
   color: string;
-  myStatus: "connected" | "not_connected";
   connectedUsers: number;
   totalUsers: number;
   tools: IntegrationTool[];
@@ -406,7 +405,7 @@ function useMockData() {
       description: "Project management",
       icon: "CU",
       color: "#7B68EE",
-      myStatus: "connected",
+
       connectedUsers: 3,
       totalUsers: 5,
       tools: [
@@ -426,7 +425,7 @@ function useMockData() {
       description: "Team messaging",
       icon: "SL",
       color: "#4A154B",
-      myStatus: "connected",
+
       connectedUsers: 5,
       totalUsers: 5,
       tools: [
@@ -445,8 +444,7 @@ function useMockData() {
       description: "Calendar & scheduling",
       icon: "GC",
       color: "#4285F4",
-      myStatus: "not_connected",
-      connectedUsers: 0,
+      connectedUsers: 3,
       totalUsers: 5,
       tools: [
         { id: "gc-1", name: "gcal-list-events", category: "read", permission: "always_allow" },
@@ -455,7 +453,7 @@ function useMockData() {
         { id: "gc-4", name: "gcal-update-event", category: "write", permission: "needs_approval" },
         { id: "gc-5", name: "gcal-delete-event", category: "write", permission: "never" },
       ],
-      userDetails: [],
+      userDetails: MOCK_TEAM_USERS.slice(0, 3),
     },
     {
       id: "int-4",
@@ -463,7 +461,7 @@ function useMockData() {
       description: "Email",
       icon: "GM",
       color: "#EA4335",
-      myStatus: "connected",
+
       connectedUsers: 2,
       totalUsers: 5,
       tools: [
@@ -507,8 +505,6 @@ export function ConnectionsPage() {
   const [providerFlow, setProviderFlow] = useState<ProviderFlow>(null);
   const [managingIntegration, setManagingIntegration] = useState<Integration | null>(null);
   const [showAddIntegrationDialog, setShowAddIntegrationDialog] = useState(false);
-  const [connectingExisting, setConnectingExisting] = useState<Integration | null>(null);
-
   const alreadyAddedServices = new Set(integrations.map((i) => i.service));
 
   const handleAddIntegration = (app: CatalogApp) => {
@@ -519,7 +515,7 @@ export function ConnectionsPage() {
       description: app.description,
       icon: meta.icon,
       color: meta.color,
-      myStatus: "connected",
+
       connectedUsers: 1,
       totalUsers: 5,
       tools: app.defaultTools.map((t) => ({ ...t, id: `${t.id}-${Date.now()}` })),
@@ -538,27 +534,6 @@ export function ConnectionsPage() {
     toast.success(`${app.name} connected`);
     // Open the manage modal after connection (defaults to My permissions tab)
     setTimeout(() => setManagingIntegration(newIntegration), 300);
-  };
-
-  const handleConnectExistingSuccess = (integration: Integration) => {
-    const currentUser: IntegrationUser = {
-      id: CURRENT_USER_ID,
-      name: "Rohan Nijhara",
-      email: "rohan@sketch.dev",
-      connectedAt: new Date().toISOString(),
-      source: "via web",
-    };
-    const updated: Integration = {
-      ...integration,
-      myStatus: "connected",
-      connectedUsers: integration.connectedUsers + 1,
-      userDetails: [...integration.userDetails, currentUser],
-    };
-    setIntegrations((prev) => prev.map((i) => (i.id === integration.id ? updated : i)));
-    setConnectingExisting(null);
-    toast.success(`${integration.service} connected`);
-    // Open the manage modal after connection (defaults to My permissions tab)
-    setTimeout(() => setManagingIntegration(updated), 300);
   };
 
   const handleProviderConnected = (type: "canvas" | "composio") => {
@@ -644,7 +619,6 @@ export function ConnectionsPage() {
         i.id === integrationId
           ? {
               ...i,
-              myStatus: "not_connected" as const,
               connectedUsers: Math.max(0, i.connectedUsers - 1),
               userDetails: i.userDetails.filter((u) => u.id !== CURRENT_USER_ID),
             }
@@ -659,7 +633,7 @@ export function ConnectionsPage() {
     const integration = integrations.find((i) => i.id === integrationId);
     setIntegrations((prev) =>
       prev.map((i) =>
-        i.id === integrationId ? { ...i, myStatus: "not_connected" as const, connectedUsers: 0, userDetails: [] } : i,
+        i.id === integrationId ? { ...i, connectedUsers: 0, userDetails: [] } : i,
       ),
     );
     setManagingIntegration(null);
@@ -688,7 +662,6 @@ export function ConnectionsPage() {
                   integrations={integrations}
                   provider={provider}
                   onManage={setManagingIntegration}
-                  onConnect={setConnectingExisting}
                   onAdd={() => setShowAddIntegrationDialog(true)}
                 />
               </>
@@ -766,11 +739,6 @@ export function ConnectionsPage() {
         onConnect={handleAddIntegration}
       />
 
-      <ConnectExistingIntegrationDialog
-        integration={connectingExisting}
-        onOpenChange={(open) => !open && setConnectingExisting(null)}
-        onConnected={handleConnectExistingSuccess}
-      />
     </div>
   );
 }
@@ -816,13 +784,11 @@ function IntegrationsList({
   integrations,
   provider,
   onManage,
-  onConnect,
   onAdd,
 }: {
   integrations: Integration[];
   provider: NonNullable<IntegrationProvider>;
   onManage: (integration: Integration) => void;
-  onConnect: (integration: Integration) => void;
   onAdd: () => void;
 }) {
   const providerLabel = provider.type === "canvas" ? "Canvas" : "Composio";
@@ -849,7 +815,6 @@ function IntegrationsList({
             integration={integration}
             isLast={i === integrations.length - 1}
             onManage={() => onManage(integration)}
-            onConnect={() => onConnect(integration)}
           />
         ))}
       </div>
@@ -865,20 +830,13 @@ function IntegrationRow({
   integration,
   isLast,
   onManage,
-  onConnect,
 }: {
   integration: Integration;
   isLast: boolean;
   onManage: () => void;
-  onConnect: () => void;
 }) {
-  const isConnected = integration.myStatus === "connected";
-  const isNotConnected = integration.myStatus === "not_connected";
-
-  const borderClass = isNotConnected ? "border-l-[3px] border-l-amber-400" : "";
-
   return (
-    <div className={`flex items-center gap-4 px-4 py-4 ${isLast ? "" : "border-b border-border"} ${borderClass}`}>
+    <div className={`flex items-center gap-4 px-4 py-4 ${isLast ? "" : "border-b border-border"}`}>
       {/* Service icon — 36×36 rounded-lg with coloured background */}
       <div
         className="flex shrink-0 items-center justify-center text-[11px] font-bold text-white"
@@ -902,28 +860,15 @@ function IntegrationRow({
       </div>
 
       {/* Status */}
-      {isConnected ? (
-        <div className="flex items-center gap-1.5">
-          <span className="size-2 rounded-full bg-success" />
-          <span className="text-xs text-muted-foreground">Connected</span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1.5">
-          <span className="size-2 rounded-full border border-muted-foreground/40" />
-          <span className="text-xs text-muted-foreground">Not connected</span>
-        </div>
-      )}
+      <div className="flex items-center gap-1.5">
+        <span className="size-2 rounded-full bg-success" />
+        <span className="text-xs text-muted-foreground">Connected</span>
+      </div>
 
       {/* Action button */}
-      {isConnected ? (
-        <Button variant="ghost" size="sm" className="text-xs" onClick={onManage}>
-          Manage
-        </Button>
-      ) : (
-        <Button variant="outline" size="sm" className="text-xs" onClick={onConnect}>
-          Connect
-        </Button>
-      )}
+      <Button variant="ghost" size="sm" className="text-xs" onClick={onManage}>
+        Manage
+      </Button>
     </div>
   );
 }
@@ -2271,130 +2216,6 @@ function AddIntegrationDialog({
 
             <DialogFooter>
               <Button className="w-full" onClick={handleFinish}>
-                Configure permissions
-              </Button>
-            </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Connect Existing Integration Dialog — OAuth flow for not_connected cards
-// ---------------------------------------------------------------------------
-
-function ConnectExistingIntegrationDialog({
-  integration,
-  onOpenChange,
-  onConnected,
-}: {
-  integration: Integration | null;
-  onOpenChange: (open: boolean) => void;
-  onConnected: (integration: Integration) => void;
-}) {
-  const [phase, setPhase] = useState<"pending" | "cancelled" | "connected">("pending");
-
-  const lastId = useState<string | null>(null);
-  if (integration && integration.id !== lastId[0]) {
-    lastId[1](integration.id);
-    setPhase("pending");
-    // Simulate OAuth completing after delay
-    setTimeout(() => setPhase("connected"), 2500);
-  }
-  if (!integration && lastId[0]) {
-    lastId[1](null);
-  }
-
-  if (!integration) return null;
-
-  const handleRetry = () => {
-    setPhase("pending");
-    setTimeout(() => setPhase("connected"), 2500);
-  };
-
-  return (
-    <Dialog open={!!integration} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        {phase === "pending" && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-3">
-                <div
-                  className="flex size-8 items-center justify-center rounded-lg text-[10px] font-bold text-white"
-                  style={{ backgroundColor: integration.color }}
-                >
-                  {integration.icon}
-                </div>
-                Connecting {integration.service}
-              </DialogTitle>
-              <DialogDescription>Authorising via OAuth — opens in a popup window.</DialogDescription>
-            </DialogHeader>
-
-            <div className="py-6">
-              <div className="rounded-lg border border-border bg-muted/30 p-6">
-                <div className="flex flex-col items-center text-center">
-                  <div
-                    className="flex size-14 items-center justify-center rounded-xl text-lg font-bold text-white"
-                    style={{ backgroundColor: integration.color }}
-                  >
-                    {integration.icon}
-                  </div>
-                  <p className="mt-4 text-sm font-medium">Authorize Sketch to access {integration.service}</p>
-                  <div className="mt-5 flex items-center gap-2">
-                    <SpinnerGapIcon size={16} className="animate-spin text-primary" />
-                    <span className="text-sm text-muted-foreground">Waiting for authorisation…</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-            </DialogFooter>
-          </>
-        )}
-
-        {phase === "cancelled" && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-3">
-                <div className="flex size-8 items-center justify-center rounded-full bg-muted">
-                  <XCircleIcon size={16} className="text-muted-foreground" />
-                </div>
-                Authorisation cancelled
-              </DialogTitle>
-              <DialogDescription>
-                You closed the authorisation window. {integration.service} was not connected. Try again when ready.
-              </DialogDescription>
-            </DialogHeader>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleRetry}>Try again</Button>
-            </DialogFooter>
-          </>
-        )}
-
-        {phase === "connected" && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-3">
-                <div className="flex size-8 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40">
-                  <CheckIcon size={16} weight="bold" className="text-emerald-600" />
-                </div>
-                {integration.service} connected
-              </DialogTitle>
-              <DialogDescription>{integration.tools.length} tools are now available.</DialogDescription>
-            </DialogHeader>
-
-            <DialogFooter>
-              <Button className="w-full" onClick={() => onConnected(integration)}>
                 Configure permissions
               </Button>
             </DialogFooter>
