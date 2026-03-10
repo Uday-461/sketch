@@ -1287,7 +1287,7 @@ function ConnectCanvasModal({
               }}
               placeholder="cvs_..."
               disabled={isConnecting}
-              className={`font-mono text-xs ${error ? "border-destructive" : ""}`}
+              className={`font-mono text-xs focus-visible:ring-0 ${error ? "border-destructive" : ""}`}
             />
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
