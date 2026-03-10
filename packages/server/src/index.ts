@@ -77,16 +77,19 @@ function createConfiguredSlackBot(tokens: { botToken: string; appToken: string }
   slackBot.onMessage(async (message) => {
     // Resolve or create user first — needed for queue key
     let user = await users.findBySlackId(message.userId);
-    const userInfo = await slackBot.getUserInfo(message.userId);
     if (!user) {
+      const userInfo = await slackBot.getUserInfo(message.userId);
       user = await users.create({
         name: userInfo.realName,
         slackUserId: message.userId,
         email: userInfo.email,
       });
       logger.info({ userId: user.id, name: user.name }, "New user created");
-    } else if (!user.email && userInfo.email) {
-      user = await users.update(user.id, { email: userInfo.email });
+    } else if (!user.email) {
+      const userInfo = await slackBot.getUserInfo(message.userId);
+      if (userInfo.email) {
+        user = await users.update(user.id, { email: userInfo.email });
+      }
     }
 
     const queue = queueManager.getQueue(user.id);
@@ -221,16 +224,19 @@ function createConfiguredSlackBot(tokens: { botToken: string; appToken: string }
       logger.info({ slackUserId: message.userId, channelId: message.channelId }, "Processing channel mention");
 
       let user = await users.findBySlackId(message.userId);
-      const userInfo = await slackBot.getUserInfo(message.userId);
       if (!user) {
+        const userInfo = await slackBot.getUserInfo(message.userId);
         user = await users.create({
           name: userInfo.realName,
           slackUserId: message.userId,
           email: userInfo.email,
         });
         logger.info({ userId: user.id, name: user.name }, "New user created");
-      } else if (!user.email && userInfo.email) {
-        user = await users.update(user.id, { email: userInfo.email });
+      } else if (!user.email) {
+        const userInfo = await slackBot.getUserInfo(message.userId);
+        if (userInfo.email) {
+          user = await users.update(user.id, { email: userInfo.email });
+        }
       }
 
       let channel = await channels.findBySlackChannelId(message.channelId);
