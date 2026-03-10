@@ -59,7 +59,7 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import { createRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { dashboardRoute } from "./dashboard";
 
@@ -505,6 +505,7 @@ export function ConnectionsPage() {
   const [viewingMcpTools, setViewingMcpTools] = useState<McpServer | null>(null);
   const [providerFlow, setProviderFlow] = useState<ProviderFlow>(null);
   const [managingIntegration, setManagingIntegration] = useState<Integration | null>(null);
+  const [managingFromFlow, setManagingFromFlow] = useState(false);
   const [showAddIntegrationDialog, setShowAddIntegrationDialog] = useState(false);
   const alreadyAddedServices = new Set(integrations.map((i) => i.service));
 
@@ -534,7 +535,10 @@ export function ConnectionsPage() {
     setShowAddIntegrationDialog(false);
     toast.success(`${app.name} connected`);
     // Open the manage modal after connection (defaults to My permissions tab)
-    setTimeout(() => setManagingIntegration(newIntegration), 300);
+    setTimeout(() => {
+      setManagingFromFlow(true);
+      setManagingIntegration(newIntegration);
+    }, 300);
   };
 
   const handleProviderConnected = (type: "canvas" | "composio") => {
@@ -723,7 +727,13 @@ export function ConnectionsPage() {
       <ManageIntegrationDialog
         integration={managingIntegration}
         isAdmin={isAdmin}
-        onOpenChange={(open) => !open && setManagingIntegration(null)}
+        fromFlow={managingFromFlow}
+        onOpenChange={(open) => {
+          if (!open) {
+            setManagingIntegration(null);
+            setManagingFromFlow(false);
+          }
+        }}
         onUpdateToolPermission={handleUpdateToolPermission}
         onBulkUpdatePermission={handleBulkUpdatePermission}
         onDisconnectSelf={handleDisconnectSelf}
@@ -2213,6 +2223,7 @@ function AddIntegrationDialog({
 function ManageIntegrationDialog({
   integration,
   isAdmin,
+  fromFlow,
   onOpenChange,
   onUpdateToolPermission,
   onBulkUpdatePermission,
@@ -2221,6 +2232,7 @@ function ManageIntegrationDialog({
 }: {
   integration: Integration | null;
   isAdmin: boolean;
+  fromFlow?: boolean;
   onOpenChange: (open: boolean) => void;
   onUpdateToolPermission: (integrationId: string, toolId: string, permission: ToolPermission) => void;
   onBulkUpdatePermission: (integrationId: string, category: "read" | "write", permission: ToolPermission) => void;
@@ -2231,7 +2243,23 @@ function ManageIntegrationDialog({
   const [useSharedAccount, setUseSharedAccount] = useState(false);
   const [disconnectConfirm, setDisconnectConfirm] = useState<"self" | "all" | null>(null);
 
+  // Change tracking: snapshot initial permissions when dialog opens
+  const initialToolPermissionsRef = useRef<Map<string, ToolPermission>>(new Map());
+  const initialSharedAccountRef = useRef(false);
+  const prevIntegrationIdRef = useRef<string | null>(null);
+
   if (!integration) return null;
+
+  // Re-snapshot when a different integration opens
+  if (prevIntegrationIdRef.current !== integration.id) {
+    prevIntegrationIdRef.current = integration.id;
+    initialToolPermissionsRef.current = new Map(integration.tools.map((t) => [t.id, t.permission]));
+    initialSharedAccountRef.current = useSharedAccount;
+  }
+
+  const hasChanges =
+    useSharedAccount !== initialSharedAccountRef.current ||
+    integration.tools.some((t) => t.permission !== initialToolPermissionsRef.current.get(t.id));
 
   const readTools = integration.tools.filter((t) => t.category === "read");
   const writeTools = integration.tools.filter((t) => t.category === "write");
@@ -2248,49 +2276,56 @@ function ManageIntegrationDialog({
   return (
     <>
       <Dialog open={!!integration} onOpenChange={onOpenChange}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-3">
-              <div
-                className="flex size-8 items-center justify-center rounded-lg text-[10px] font-bold text-white"
-                style={{ backgroundColor: integration.color }}
-              >
-                {integration.icon}
+        <DialogContent
+          className={`flex flex-col overflow-hidden ${fromFlow ? "sm:h-[600px] sm:max-h-[600px]" : ""}`}
+          showCloseButton={!fromFlow}
+        >
+          {fromFlow && <DialogBackRow label={`${integration.service} connected`} onBack={() => onOpenChange(false)} />}
+
+          <div className="shrink-0">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-3">
+                <div
+                  className="flex size-8 items-center justify-center rounded-lg text-[10px] font-bold text-white"
+                  style={{ backgroundColor: integration.color }}
+                >
+                  {integration.icon}
+                </div>
+                {integration.service}
+              </DialogTitle>
+              <DialogDescription>Choose when the agent is allowed to use these tools.</DialogDescription>
+            </DialogHeader>
+
+            {/* Tab bar — admin sees both (My permissions first), member sees permissions only */}
+            {isAdmin && (
+              <div className="-mx-6 mt-4 flex border-b border-border px-6">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("permissions")}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === "permissions"
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  My permissions
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("members")}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === "members"
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Members
+                </button>
               </div>
-              {integration.service}
-            </DialogTitle>
-            <DialogDescription>Choose when the agent is allowed to use these tools.</DialogDescription>
-          </DialogHeader>
+            )}
+          </div>
 
-          {/* Tab bar — admin sees both (My permissions first), member sees permissions only */}
-          {isAdmin && (
-            <div className="-mx-6 flex border-b border-border px-6">
-              <button
-                type="button"
-                onClick={() => setActiveTab("permissions")}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === "permissions"
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                My permissions
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("members")}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === "members"
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Members
-              </button>
-            </div>
-          )}
-
-          <div className="max-h-[60vh] overflow-y-auto py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto py-4 -mx-6 px-6">
             {/* Members tab */}
             {(isAdmin ? activeTab === "members" : false) && (
               <div className="space-y-3">
@@ -2384,10 +2419,14 @@ function ManageIntegrationDialog({
 
                 {/* Disconnect all members — admin only, in Members tab */}
                 {isAdmin && (
-                  <div className="border-t border-border pt-4">
-                    <Button variant="outline" className="w-full" onClick={() => setDisconnectConfirm("all")}>
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => setDisconnectConfirm("all")}
+                      className="text-sm font-medium text-muted-foreground transition-colors hover:text-destructive"
+                    >
                       Disconnect all members from {integration.service}
-                    </Button>
+                    </button>
                   </div>
                 )}
               </div>
@@ -2452,24 +2491,31 @@ function ManageIntegrationDialog({
                   </div>
                 </div>
 
-                {/* Disconnect self — stays in My permissions tab */}
-                <div className="border-t border-border pt-4">
-                  <Button
-                    variant="outline"
-                    className="w-full border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/20"
+                {/* Disconnect self — plain text link, centered */}
+                <div className="text-center">
+                  <button
+                    type="button"
                     onClick={() => setDisconnectConfirm("self")}
+                    className="text-sm font-medium text-muted-foreground transition-colors hover:text-destructive"
                   >
                     Disconnect my {integration.service} account
-                  </Button>
+                  </button>
                 </div>
               </div>
             )}
           </div>
 
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button className="w-full">Done</Button>
-            </DialogClose>
+          <DialogFooter className="shrink-0">
+            <Button
+              disabled={!hasChanges}
+              onClick={() => {
+                initialToolPermissionsRef.current = new Map(integration.tools.map((t) => [t.id, t.permission]));
+                initialSharedAccountRef.current = useSharedAccount;
+                toast.success("Permissions saved");
+              }}
+            >
+              Save changes
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
