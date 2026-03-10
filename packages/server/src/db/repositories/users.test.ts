@@ -60,6 +60,26 @@ describe("create()", () => {
     expect(user.whatsapp_number).toBe("+14155551234");
   });
 
+  it("creates user with email", async () => {
+    const user = await users.create({ name: "Alice Email", slackUserId: "U200", email: "alice@example.com" });
+    expect(user.email).toBe("alice@example.com");
+  });
+
+  it("creates user with null email when not provided", async () => {
+    const user = await users.create({ name: "Bob No Email", slackUserId: "U201" });
+    expect(user.email).toBeNull();
+  });
+
+  it("creates user with email and whatsappNumber", async () => {
+    const user = await users.create({
+      name: "Charlie Full",
+      whatsappNumber: "+14155559999",
+      email: "charlie@example.com",
+    });
+    expect(user.whatsapp_number).toBe("+14155559999");
+    expect(user.email).toBe("charlie@example.com");
+  });
+
   it("duplicate whatsapp_number throws", async () => {
     await users.create({ name: "Noah", whatsappNumber: "+14155559999" });
     await expect(users.create({ name: "Olivia", whatsappNumber: "+14155559999" })).rejects.toThrow();

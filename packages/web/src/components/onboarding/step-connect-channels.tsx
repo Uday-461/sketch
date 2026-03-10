@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { WhatsAppQR } from "@/components/whatsapp-qr";
 import { api } from "@/lib/api";
+import { generateSlackManifest } from "@/lib/slack-manifest";
 
 interface ChannelState {
   slack: {
@@ -117,71 +118,20 @@ export function StepConnectChannels({
   const handleCopyManifest = useCallback(async () => {
     const manifestBotName = botName.trim() || "Sketch";
 
-    const manifest = JSON.stringify(
-      {
-        display_information: {
-          name: manifestBotName,
-        },
-        features: {
-          bot_user: {
-            display_name: manifestBotName,
-            always_online: true,
-          },
-        },
-        oauth_config: {
-          scopes: {
-            bot: [
-              "app_mentions:read",
-              "channels:history",
-              "channels:read",
-              "chat:write",
-              "groups:history",
-              "groups:read",
-              "im:history",
-              "im:read",
-              "im:write",
-              "mpim:history",
-              "mpim:read",
-              "reactions:read",
-              "reactions:write",
-              "team:read",
-              "users:read",
-              "files:read",
-              "files:write",
-            ],
-          },
-        },
-        settings: {
-          event_subscriptions: {
-            bot_events: ["app_mention", "message.channels", "message.groups", "message.im", "message.mpim"],
-          },
-          interactivity: {
-            is_enabled: true,
-          },
-          org_deploy_enabled: false,
-          socket_mode_enabled: true,
-          token_rotation_enabled: false,
-        },
-      },
-      null,
-      2,
-    );
-
     try {
       if (typeof navigator === "undefined" || !navigator.clipboard) {
         throw new Error("Clipboard API not available");
       }
 
-      await navigator.clipboard.writeText(manifest);
+      await navigator.clipboard.writeText(generateSlackManifest(manifestBotName));
       setManifestCopied(true);
       toast.success("Slack manifest copied to clipboard.");
 
       setTimeout(() => {
         setManifestCopied(false);
       }, 2000);
-    } catch (error) {
-      toast.error("Unable to copy manifest. Please try again or copy manually.");
-      console.error(error);
+    } catch {
+      toast.error("Unable to copy manifest. Please try again.");
     }
   }, [botName]);
   const handleWhatsAppConnected = (phoneNumber: string) => {

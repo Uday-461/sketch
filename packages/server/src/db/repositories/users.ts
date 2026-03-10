@@ -20,7 +20,7 @@ export function createUserRepository(db: Kysely<DB>) {
       return db.selectFrom("users").selectAll().where("id", "=", id).executeTakeFirst();
     },
 
-    async create(data: { name: string; slackUserId?: string; whatsappNumber?: string }) {
+    async create(data: { name: string; slackUserId?: string; whatsappNumber?: string; email?: string | null }) {
       const id = randomUUID();
       await db
         .insertInto("users")
@@ -29,6 +29,7 @@ export function createUserRepository(db: Kysely<DB>) {
           name: data.name,
           slack_user_id: data.slackUserId ?? null,
           whatsapp_number: data.whatsappNumber ?? null,
+          email: data.email ?? null,
         })
         .execute();
 

@@ -22,7 +22,7 @@ import { createSlackStartupManager } from "./slack/startup";
 import type { BufferedMessage } from "./slack/thread-buffer";
 import { ThreadBuffer } from "./slack/thread-buffer";
 import { UserCache } from "./slack/user-cache";
-import { WhatsAppBot } from "./whatsapp/bot";
+import { WhatsAppBot, jidToPhoneNumber } from "./whatsapp/bot";
 import { GroupBuffer } from "./whatsapp/group-buffer";
 import { createWhatsAppMessageHandler } from "./whatsapp/message-handler";
 
@@ -77,13 +77,16 @@ function createConfiguredSlackBot(tokens: { botToken: string; appToken: string }
   slackBot.onMessage(async (message) => {
     // Resolve or create user first — needed for queue key
     let user = await users.findBySlackId(message.userId);
+    const userInfo = await slackBot.getUserInfo(message.userId);
     if (!user) {
-      const userInfo = await slackBot.getUserInfo(message.userId);
       user = await users.create({
         name: userInfo.realName,
         slackUserId: message.userId,
+        email: userInfo.email,
       });
       logger.info({ userId: user.id, name: user.name }, "New user created");
+    } else if (!user.email && userInfo.email) {
+      user = await users.update(user.id, { email: userInfo.email });
     }
 
     const queue = queueManager.getQueue(user.id);
@@ -218,13 +221,16 @@ function createConfiguredSlackBot(tokens: { botToken: string; appToken: string }
       logger.info({ slackUserId: message.userId, channelId: message.channelId }, "Processing channel mention");
 
       let user = await users.findBySlackId(message.userId);
+      const userInfo = await slackBot.getUserInfo(message.userId);
       if (!user) {
-        const userInfo = await slackBot.getUserInfo(message.userId);
         user = await users.create({
           name: userInfo.realName,
           slackUserId: message.userId,
+          email: userInfo.email,
         });
         logger.info({ userId: user.id, name: user.name }, "New user created");
+      } else if (!user.email && userInfo.email) {
+        user = await users.update(user.id, { email: userInfo.email });
       }
 
       let channel = await channels.findBySlackChannelId(message.channelId);
@@ -456,13 +462,19 @@ whatsapp.onMessage(async (message) => {
   // --- Group handler ---
 
   if (!message.isMentioned) {
+    const senderPhone = jidToPhoneNumber(message.senderJid);
+    const user = await users.findByWhatsappNumber(senderPhone);
     groupBuffer.append(message.jid, {
-      senderName: message.pushName,
+      senderName: user?.name ?? message.pushName,
       text: message.text,
       timestamp: Date.now(),
     });
     return;
   }
+
+  const senderPhone = jidToPhoneNumber(message.senderJid);
+  const user = await users.findByWhatsappNumber(senderPhone);
+  const userName = user?.name ?? message.pushName;
 
   const groupJid = message.jid;
   const queue = queueManager.getQueue(`wa-group-${groupJid}`);
@@ -501,11 +513,7 @@ whatsapp.onMessage(async (message) => {
         }
       }
 
-      const userMessage = formatBufferedContext(
-        contextMessages,
-        message.pushName,
-        message.text || "See attached files.",
-      );
+      const userMessage = formatBufferedContext(contextMessages, userName, message.text || "See attached files.");
 
       const onMessage = createWhatsAppMessageHandler(
         whatsapp,
@@ -516,7 +524,7 @@ whatsapp.onMessage(async (message) => {
       const result = await runAgent({
         userMessage,
         workspaceDir,
-        userName: message.pushName,
+        userName,
         logger,
         platform: "whatsapp",
         onMessage,
