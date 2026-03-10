@@ -317,12 +317,18 @@ function WhatsAppPairDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Connect WhatsApp</DialogTitle>
           <DialogDescription>Scan this QR code with WhatsApp to connect your number.</DialogDescription>
         </DialogHeader>
         {open && <WhatsAppQR onConnected={onConnected} />}
+        <DialogFooter>
+          <Button variant="outline" size="sm" disabled>
+            <SpinnerGapIcon className="size-3.5 animate-spin" />
+            Waiting for scan
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -485,7 +491,7 @@ function EmailConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Configure Email (SMTP)</DialogTitle>
           <DialogDescription>Enter your SMTP credentials. Connection will be verified before saving.</DialogDescription>
@@ -689,7 +695,7 @@ function SlackConnectDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Connect Slack</DialogTitle>
           <DialogDescription>Create a Slack app and paste the tokens to connect.</DialogDescription>

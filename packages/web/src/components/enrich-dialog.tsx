@@ -76,7 +76,7 @@ export function EnrichDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <SparkleIcon size={18} weight="fill" className="text-primary" />

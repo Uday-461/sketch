@@ -177,7 +177,7 @@ export function ConnectIntegrationDialog({
         else onOpenChange(next);
       }}
     >
-      <DialogContent className="max-w-md">
+      <DialogContent>
         {step === "credentials" ? (
           <>
             <DialogHeader>

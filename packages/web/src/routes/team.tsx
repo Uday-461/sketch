@@ -456,7 +456,7 @@ function AddMemberDialog({
         else onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Add member</DialogTitle>
           <DialogDescription>Add a team member with their email or WhatsApp number.</DialogDescription>
@@ -581,7 +581,7 @@ function EditMemberDialog({
 
   return (
     <Dialog open={!!user} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Edit member</DialogTitle>
           <DialogDescription>Update this member's details.</DialogDescription>
@@ -689,7 +689,7 @@ function RemoveMemberDialog({
 
   return (
     <Dialog open={!!user} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Remove team member?</DialogTitle>
           <DialogDescription asChild>
@@ -754,7 +754,7 @@ function LinkProviderDialog({
 
   return (
     <Dialog open={!!user} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Link accounts</DialogTitle>
           <DialogDescription>

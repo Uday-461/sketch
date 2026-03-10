@@ -587,7 +587,7 @@ function BrowseConnectorsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>All connectors</DialogTitle>
           <DialogDescription>Connect external sources to sync files into your knowledge base.</DialogDescription>
@@ -753,7 +753,7 @@ function ManageConnectorDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2.5">
               <IntegrationIcon color={definition.color} name={definition.name} type={definition.type} />

@@ -1070,7 +1070,7 @@ function ProviderSelectorModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Connect a provider</DialogTitle>
           <DialogDescription>
@@ -1187,7 +1187,7 @@ function ConnectCanvasModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md" showCloseButton={reconnect}>
+      <DialogContent showCloseButton={reconnect}>
         {!reconnect && <DialogBackRow label="Choose provider" onBack={onBack} />}
 
         <DialogHeader>
@@ -1308,7 +1308,7 @@ function ComingSoonModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" showCloseButton={false}>
+      <DialogContent showCloseButton={false}>
         <DialogBackRow label="Choose provider" onBack={onBack} />
 
         <DialogHeader>
@@ -1399,7 +1399,7 @@ function AddMcpDialog({
         else onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Add MCP server</DialogTitle>
           <DialogDescription>Connect an MCP server to give the agent access to its tools.</DialogDescription>
@@ -1566,7 +1566,7 @@ function EditMcpDialog({
 
   return (
     <Dialog open={!!server} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Edit MCP server</DialogTitle>
           <DialogDescription>Update the server connection settings.</DialogDescription>
@@ -1724,7 +1724,7 @@ function ViewMcpToolsDialog({
 
   return (
     <Dialog open={!!server} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <div className="flex size-8 items-center justify-center rounded-full bg-muted">
@@ -1973,7 +1973,7 @@ function AddIntegrationDialog({
         else onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         {step.kind === "search" && (
           <>
             <DialogHeader>
@@ -2227,7 +2227,7 @@ function ManageIntegrationDialog({
   return (
     <>
       <Dialog open={!!integration} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-3">
               <div
