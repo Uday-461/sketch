@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useTheme } from "@/hooks/use-theme";
 import { api } from "@/lib/api";
+import { getInitials } from "@/lib/utils";
 /**
  * App sidebar — navigation, branding, and user actions.
  * Follows the designer's sidebar structure with Phosphor icons.
@@ -56,7 +57,15 @@ const adminNav: NavItem[] = [
   { label: "Settings", icon: <GearIcon size={18} />, href: "/settings", disabled: true },
 ];
 
-export function AppSidebar({ email }: { email: string }) {
+export function AppSidebar({
+  displayName,
+  displayIdentifier,
+  role,
+}: {
+  displayName: string;
+  displayIdentifier: string;
+  role: "admin" | "member";
+}) {
   const location = useLocation();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
@@ -75,7 +84,7 @@ export function AppSidebar({ email }: { email: string }) {
     },
   });
 
-  const initials = email.slice(0, 2).toUpperCase();
+  const initials = getInitials(displayIdentifier);
 
   return (
     <Sidebar collapsible="icon">
@@ -118,27 +127,31 @@ export function AppSidebar({ email }: { email: string }) {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarSeparator />
+        {role === "admin" && (
+          <>
+            <SidebarSeparator />
 
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {adminNav.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    isActive={location.pathname === item.href}
-                    onClick={() => !item.disabled && navigate({ to: item.href })}
-                    disabled={item.disabled}
-                    tooltip={item.label}
-                  >
-                    {item.icon}
-                    <span>{item.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {adminNav.map((item) => (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        isActive={location.pathname === item.href}
+                        onClick={() => !item.disabled && navigate({ to: item.href })}
+                        disabled={item.disabled}
+                        tooltip={item.label}
+                      >
+                        {item.icon}
+                        <span>{item.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
       </SidebarContent>
 
       <SidebarFooter>
@@ -151,8 +164,8 @@ export function AppSidebar({ email }: { email: string }) {
                     {initials}
                   </div>
                   <div className="flex flex-col text-left text-xs leading-tight group-data-[collapsible=icon]:hidden">
-                    <span className="font-medium">Admin</span>
-                    <span className="text-muted-foreground">{email}</span>
+                    <span className="font-medium">{displayName}</span>
+                    <span className="text-muted-foreground">{displayIdentifier}</span>
                   </div>
                   <CaretUpDownIcon
                     size={16}
