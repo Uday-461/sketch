@@ -216,8 +216,8 @@ export function ConnectionsBanner({ onConnect }: { onConnect: () => void }) {
         const orb2Y = 100 - orbY * 0.3;
 
         orbRef.current.style.background = [
-          `radial-gradient(ellipse 65% 60% at ${orbX}% ${orbY}%, rgba(107,125,250,0.20) 0%, rgba(107,125,250,0.05) 55%, transparent 75%)`,
-          `radial-gradient(ellipse 45% 45% at ${orb2X}% ${orb2Y}%, rgba(167,139,250,0.09) 0%, transparent 65%)`,
+          `radial-gradient(ellipse 65% 60% at ${orbX}% ${orbY}%, rgba(254,237,1,0.12) 0%, rgba(254,237,1,0.03) 55%, transparent 75%)`,
+          `radial-gradient(ellipse 45% 45% at ${orb2X}% ${orb2Y}%, rgba(212,196,0,0.07) 0%, transparent 65%)`,
         ].join(", ");
       }
 
@@ -274,8 +274,8 @@ export function ConnectionsBanner({ onConnect }: { onConnect: () => void }) {
         const orb2Y = 100 - orbY * 0.3;
 
         orbRef.current.style.background = [
-          `radial-gradient(ellipse 65% 60% at ${orbX}% ${orbY}%, rgba(107,125,250,0.20) 0%, rgba(107,125,250,0.05) 55%, transparent 75%)`,
-          `radial-gradient(ellipse 45% 45% at ${orb2X}% ${orb2Y}%, rgba(167,139,250,0.09) 0%, transparent 65%)`,
+          `radial-gradient(ellipse 65% 60% at ${orbX}% ${orbY}%, rgba(254,237,1,0.12) 0%, rgba(254,237,1,0.03) 55%, transparent 75%)`,
+          `radial-gradient(ellipse 45% 45% at ${orb2X}% ${orb2Y}%, rgba(212,196,0,0.07) 0%, transparent 65%)`,
         ].join(", ");
       }
 
@@ -307,8 +307,8 @@ export function ConnectionsBanner({ onConnect }: { onConnect: () => void }) {
           position: "relative",
           width: "100%",
           borderRadius: 16,
-          border: "1px solid rgba(107, 125, 250, 0.25)",
-          background: "#1a1a2e",
+          border: "1px solid rgba(254, 237, 1, 0.15)",
+          background: "#111110",
           overflow: "hidden",
         }}
       >
@@ -359,7 +359,7 @@ export function ConnectionsBanner({ onConnect }: { onConnect: () => void }) {
             position: "absolute",
             inset: 0,
             background:
-              "linear-gradient(to right, #1a1a2e 55%, rgba(26,26,46,0.60) 63%, rgba(26,26,46,0.15) 72%, transparent 82%)",
+              "linear-gradient(to right, #111110 55%, rgba(17,17,16,0.60) 63%, rgba(17,17,16,0.15) 72%, transparent 82%)",
             pointerEvents: "none",
           }}
         />
@@ -370,7 +370,7 @@ export function ConnectionsBanner({ onConnect }: { onConnect: () => void }) {
             position: "absolute",
             inset: 0,
             background:
-              "linear-gradient(to bottom, transparent 55%, rgba(26,26,46,0.25) 68%, rgba(26,26,46,0.55) 88%, rgba(26,26,46,0.75) 100%)",
+              "linear-gradient(to bottom, transparent 55%, rgba(17,17,16,0.25) 68%, rgba(17,17,16,0.55) 88%, rgba(17,17,16,0.75) 100%)",
             pointerEvents: "none",
           }}
         />
@@ -403,7 +403,7 @@ export function ConnectionsBanner({ onConnect }: { onConnect: () => void }) {
                 fontFamily: "Palatino, 'Palatino Linotype', 'Book Antiqua', serif",
                 fontWeight: 700,
                 fontStyle: "italic",
-                background: "linear-gradient(to right, #ffffff 0%, #6B7DFA 100%)",
+                background: "linear-gradient(to right, #ffffff 0%, #FEED01 100%)",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
@@ -444,10 +444,10 @@ export function ConnectionsBanner({ onConnect }: { onConnect: () => void }) {
               fontFamily: "'Instrument Sans', sans-serif",
             }}
           >
-            <span className="text-[#818cf8] group-hover:text-white transition-colors duration-200 text-[13.5px] font-semibold">
+            <span className="text-[#FEED01] group-hover:text-white transition-colors duration-200 text-[13.5px] font-semibold">
               Connect
             </span>
-            <span className="text-[#818cf8] group-hover:text-white transition-all duration-200 text-[16px] ml-[6px] group-hover:ml-[10px]">
+            <span className="text-[#FEED01] group-hover:text-white transition-all duration-200 text-[16px] ml-[6px] group-hover:ml-[10px]">
               &rarr;
             </span>
           </button>
