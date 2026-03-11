@@ -83,7 +83,7 @@ export function AppSidebar({
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex h-12 items-center gap-2 overflow-hidden">
-          <img src="/sketch.png" alt="Sketch" className="size-7 shrink-0" />
+          <img src="/assets/sketch.png" alt="Sketch" className="size-7 shrink-0" />
           <div className="flex min-w-0 flex-col text-left">
             <span className="truncate text-base font-semibold tracking-tight">{identity?.botName ?? "Sketch"}</span>
             {identity?.orgName ? (
