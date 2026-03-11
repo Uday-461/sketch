@@ -305,7 +305,7 @@ export function ConnectionsBanner({ onConnect }: { onConnect: () => void }) {
         onMouseLeave={handleMouseLeave}
         style={{
           position: "relative",
-          maxWidth: 700,
+          width: "100%",
           borderRadius: 16,
           border: "1px solid rgba(107, 125, 250, 0.25)",
           background: "#1a1a2e",
