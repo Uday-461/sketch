@@ -18,6 +18,7 @@ import { QueueManager } from "./queue";
 import { slackApiCall } from "./slack/api";
 import { SlackBot } from "./slack/bot";
 import { createSlackMessageHandler } from "./slack/message-handler";
+import { resolveSlackUser } from "./slack/resolve-user";
 import { createSlackStartupManager } from "./slack/startup";
 import type { BufferedMessage } from "./slack/thread-buffer";
 import { ThreadBuffer } from "./slack/thread-buffer";
@@ -73,24 +74,13 @@ function createConfiguredSlackBot(tokens: { botToken: string; appToken: string }
     logger,
   });
 
+  const resolveUser = (slackUserId: string) =>
+    resolveSlackUser(slackUserId, { users, getUserInfo: (id) => slackBot.getUserInfo(id), logger });
+
   // DM handler
   slackBot.onMessage(async (message) => {
     // Resolve or create user first — needed for queue key
-    let user = await users.findBySlackId(message.userId);
-    if (!user) {
-      const userInfo = await slackBot.getUserInfo(message.userId);
-      user = await users.create({
-        name: userInfo.realName,
-        slackUserId: message.userId,
-        email: userInfo.email,
-      });
-      logger.info({ userId: user.id, name: user.name }, "New user created");
-    } else if (!user.email) {
-      const userInfo = await slackBot.getUserInfo(message.userId);
-      if (userInfo.email) {
-        user = await users.update(user.id, { email: userInfo.email });
-      }
-    }
+    const user = await resolveUser(message.userId);
 
     const queue = queueManager.getQueue(user.id);
 
@@ -223,21 +213,7 @@ function createConfiguredSlackBot(tokens: { botToken: string; appToken: string }
     queue.enqueue(async () => {
       logger.info({ slackUserId: message.userId, channelId: message.channelId }, "Processing channel mention");
 
-      let user = await users.findBySlackId(message.userId);
-      if (!user) {
-        const userInfo = await slackBot.getUserInfo(message.userId);
-        user = await users.create({
-          name: userInfo.realName,
-          slackUserId: message.userId,
-          email: userInfo.email,
-        });
-        logger.info({ userId: user.id, name: user.name }, "New user created");
-      } else if (!user.email) {
-        const userInfo = await slackBot.getUserInfo(message.userId);
-        if (userInfo.email) {
-          user = await users.update(user.id, { email: userInfo.email });
-        }
-      }
+      const user = await resolveUser(message.userId);
 
       let channel = await channels.findBySlackChannelId(message.channelId);
       if (!channel) {

@@ -86,6 +86,20 @@ describe("create()", () => {
   });
 });
 
+describe("findByEmail()", () => {
+  it("returns user when found", async () => {
+    const created = await users.create({ name: "Zoe", email: "zoe@example.com" });
+    const found = await users.findByEmail("zoe@example.com");
+    expect(found).toBeDefined();
+    expect(found?.id).toBe(created.id);
+  });
+
+  it("returns undefined when not found", async () => {
+    const found = await users.findByEmail("nobody@example.com");
+    expect(found).toBeUndefined();
+  });
+});
+
 describe("findBySlackId()", () => {
   it("returns the user when found", async () => {
     const created = await users.create({ name: "Hank", slackUserId: "U007" });
@@ -200,6 +214,13 @@ describe("update()", () => {
     const updated = await users.update(created.id, { name: "Franklin", email: "frank@example.com" });
     expect(updated.name).toBe("Franklin");
     expect(updated.email).toBe("frank@example.com");
+  });
+
+  it("updates slack_user_id", async () => {
+    const created = await users.create({ name: "Wendy", email: "wendy@example.com" });
+    expect(created.slack_user_id).toBeNull();
+    const updated = await users.update(created.id, { slackUserId: "U999" });
+    expect(updated.slack_user_id).toBe("U999");
   });
 
   it("returns unchanged user when no fields provided", async () => {
