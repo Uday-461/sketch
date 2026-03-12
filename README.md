@@ -1,8 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/sketch.png" />
-    <source media="(prefers-color-scheme: light)" srcset="assets/sketch-dark.png" />
-    <img alt="Sketch" src="assets/sketch-dark.png" width="120" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/canvasxai/sketch/main/assets/sketch.png" />
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/canvasxai/sketch/main/assets/sketch-dark.png" />
+    <img alt="Sketch" src="https://raw.githubusercontent.com/canvasxai/sketch/main/assets/sketch-dark.png" width="120" />
   </picture>
 </p>
 
