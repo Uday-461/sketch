@@ -92,6 +92,24 @@ export interface ChatSessionsTable {
   updated_at: Generated<string>;
 }
 
+export interface ScheduledTasksTable {
+  id: string;
+  platform: string;
+  context_type: string;
+  delivery_target: string;
+  thread_ts: string | null;
+  prompt: string;
+  schedule_type: string;
+  schedule_value: string;
+  timezone: Generated<string>;
+  session_mode: Generated<string>;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  status: Generated<string>;
+  created_by: string | null;
+  created_at: Generated<string>;
+}
+
 export interface DB {
   users: UsersTable;
   channels: ChannelsTable;
@@ -102,4 +120,5 @@ export interface DB {
   magic_link_tokens: MagicLinkTokensTable;
   mcp_servers: McpServersTable;
   chat_sessions: ChatSessionsTable;
+  scheduled_tasks: ScheduledTasksTable;
 }

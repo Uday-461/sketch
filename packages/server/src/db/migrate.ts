@@ -16,6 +16,7 @@ import * as m009 from "./migrations/009-magic-link-tokens";
 import * as m010 from "./migrations/010-mcp-servers";
 import * as m011 from "./migrations/011-mcp-server-mode";
 import * as m012 from "./migrations/012-chat-sessions";
+import * as m013 from "./migrations/013-scheduled-tasks";
 import type { DB } from "./schema";
 
 export async function runMigrations(db: Kysely<DB>): Promise<void> {
@@ -36,6 +37,7 @@ export async function runMigrations(db: Kysely<DB>): Promise<void> {
           "010-mcp-servers": m010,
           "011-mcp-server-mode": m011,
           "012-chat-sessions": m012,
+          "013-scheduled-tasks": m013,
         };
       },
     },

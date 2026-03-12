@@ -1,0 +1,34 @@
+/**
+ * Shared types for the scheduled tasks feature.
+ *
+ * ScheduledTask is the camelCase application-level interface returned by the repository.
+ * TaskContext carries the ambient message context (platform, channel, user) that is
+ * injected into the agent at run time so the ManageScheduledTasks tool can fill in
+ * delivery metadata without requiring the agent to supply it explicitly.
+ */
+
+export interface ScheduledTask {
+  id: string;
+  platform: "slack" | "whatsapp";
+  contextType: "dm" | "channel" | "group";
+  deliveryTarget: string;
+  threadTs: string | null;
+  prompt: string;
+  scheduleType: "cron" | "interval";
+  scheduleValue: string;
+  timezone: string;
+  sessionMode: "fresh" | "persistent" | "chat";
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  status: "active" | "paused";
+  createdBy: string | null;
+  createdAt: string;
+}
+
+export interface TaskContext {
+  platform: "slack" | "whatsapp";
+  contextType: "dm" | "channel" | "group";
+  deliveryTarget: string;
+  createdBy: string;
+  threadTs?: string;
+}
