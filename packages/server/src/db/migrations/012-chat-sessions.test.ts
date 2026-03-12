@@ -1,3 +1,6 @@
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 /**
  * Tests for the 012-chat-sessions migration.
  *
@@ -12,9 +15,6 @@
  * DATA_DIR to point at it, and restore the env var afterwards.
  */
 import SQLite from "better-sqlite3";
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { Kysely, SqliteDialect } from "kysely";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { up } from "./012-chat-sessions";
@@ -34,10 +34,7 @@ function createBlankDb(): Kysely<unknown> {
 }
 
 async function querySessions(db: Kysely<unknown>): Promise<ChatSessionRow[]> {
-  return (db as Kysely<{ chat_sessions: ChatSessionRow }>)
-    .selectFrom("chat_sessions")
-    .selectAll()
-    .execute();
+  return (db as Kysely<{ chat_sessions: ChatSessionRow }>).selectFrom("chat_sessions").selectAll().execute();
 }
 
 describe("012-chat-sessions migration", () => {
@@ -52,7 +49,7 @@ describe("012-chat-sessions migration", () => {
   afterEach(async () => {
     await db.destroy();
     if (originalDataDir === undefined) {
-      delete process.env.DATA_DIR;
+      process.env.DATA_DIR = undefined;
     } else {
       process.env.DATA_DIR = originalDataDir;
     }

@@ -55,6 +55,13 @@ export interface RunAgentParams {
   };
   integrationMcpServers?: Record<string, McpServerConfig>;
   findIntegrationProvider?: () => Promise<{ type: string; credentials: string } | null>;
+  /**
+   * Controls session behaviour for scheduled tasks.
+   * - "fresh": skip session resume and skip session save (fully ephemeral run)
+   * - "persistent" or "chat": normal get+save behaviour (same as undefined)
+   * When omitted, behaves exactly as before (always get + save).
+   */
+  sessionMode?: "fresh" | "persistent" | "chat";
 }
 
 /**
@@ -84,7 +91,8 @@ export function extractAssistantText(message: unknown): string | null {
 
 export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
   const { userMessage, workspaceDir, userName, logger } = params;
-  const existingSessionId = await getSessionId(params.db, params.workspaceKey, params.threadTs);
+  const isFresh = params.sessionMode === "fresh";
+  const existingSessionId = isFresh ? undefined : await getSessionId(params.db, params.workspaceKey, params.threadTs);
   const absWorkspace = resolve(workspaceDir);
 
   const systemAppend = buildSystemContext({
@@ -185,7 +193,7 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
     }
   }
 
-  if (sessionId) {
+  if (sessionId && !isFresh) {
     await saveSessionId(params.db, params.workspaceKey, sessionId, params.threadTs);
   }
 
