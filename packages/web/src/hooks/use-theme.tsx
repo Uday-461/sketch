@@ -67,7 +67,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener("change", onChange);
   }, [theme]);
 
-  const logoSrc = resolvedTheme === "dark" ? "/assets/sketch.png" : "/assets/sketch-dark.png";
+  const logoSrc = resolvedTheme === "dark" ? "/assets/sketch.svg" : "/assets/sketch-dark.svg";
 
   const value = useMemo(
     () => ({ theme, resolvedTheme, setTheme: setThemeState, logoSrc }),
