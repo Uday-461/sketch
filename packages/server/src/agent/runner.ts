@@ -14,6 +14,8 @@ import type { DB } from "../db/schema";
 import type { Attachment } from "../files";
 import { buildMultimodalContent, formatAttachmentsForPrompt, isImageAttachment } from "../files";
 import type { Logger } from "../logger";
+import type { TaskScheduler } from "../scheduler/service";
+import type { TaskContext } from "../scheduler/types";
 import { createCanUseTool } from "./permissions";
 import { buildSystemContext } from "./prompt";
 import { getSessionId, saveSessionId } from "./sessions";
@@ -62,6 +64,8 @@ export interface RunAgentParams {
    * When omitted, behaves exactly as before (always get + save).
    */
   sessionMode?: "fresh" | "persistent" | "chat";
+  taskContext?: TaskContext;
+  scheduler?: TaskScheduler;
 }
 
 /**
@@ -148,6 +152,8 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
     uploadCollector,
     workspaceDir: absWorkspace,
     findIntegrationProvider: params.findIntegrationProvider,
+    taskContext: params.taskContext,
+    scheduler: params.scheduler,
   });
 
   const run = query({

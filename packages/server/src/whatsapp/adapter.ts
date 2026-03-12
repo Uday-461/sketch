@@ -16,6 +16,7 @@ import type { DB } from "../db/schema";
 import { type Attachment, downloadWhatsAppMedia, extensionToMime } from "../files";
 import type { Logger } from "../logger";
 import type { QueueManager } from "../queue";
+import type { TaskScheduler } from "../scheduler/service";
 import type { WhatsAppBot } from "./bot";
 import { jidToPhoneNumber } from "./bot";
 import type { GroupBuffer } from "./group-buffer";
@@ -37,10 +38,22 @@ export interface WhatsAppAdapterDeps {
   runAgent: (params: RunAgentParams) => Promise<AgentResult>;
   buildMcpServers: (email: string | null) => Promise<Record<string, McpServerConfig>>;
   findIntegrationProvider: () => Promise<{ type: string; credentials: string } | null>;
+  scheduler?: TaskScheduler;
 }
 
 export function wireWhatsAppHandlers(whatsapp: WhatsAppBot, deps: WhatsAppAdapterDeps): void {
-  const { db, config, logger, repos, queue, groupBuffer, runAgent, buildMcpServers, findIntegrationProvider } = deps;
+  const {
+    db,
+    config,
+    logger,
+    repos,
+    queue,
+    groupBuffer,
+    runAgent,
+    buildMcpServers,
+    findIntegrationProvider,
+    scheduler,
+  } = deps;
   const maxFileBytes = config.MAX_FILE_SIZE_MB * 1024 * 1024;
 
   whatsapp.onMessage(async (message) => {
@@ -100,6 +113,13 @@ export function wireWhatsAppHandlers(whatsapp: WhatsAppBot, deps: WhatsAppAdapte
             attachments: attachments.length > 0 ? attachments : undefined,
             integrationMcpServers: waIntegrationMcpServers,
             findIntegrationProvider,
+            taskContext: {
+              platform: "whatsapp" as const,
+              contextType: "dm" as const,
+              deliveryTarget: message.jid,
+              createdBy: user.id,
+            },
+            scheduler,
           });
 
           for (const filePath of result.pendingUploads) {
@@ -207,6 +227,13 @@ export function wireWhatsAppHandlers(whatsapp: WhatsAppBot, deps: WhatsAppAdapte
           groupContext: { groupName, groupDescription },
           integrationMcpServers,
           findIntegrationProvider,
+          taskContext: {
+            platform: "whatsapp" as const,
+            contextType: "group" as const,
+            deliveryTarget: groupJid,
+            createdBy: user?.id ?? "unknown",
+          },
+          scheduler,
         });
 
         for (const filePath of result.pendingUploads) {

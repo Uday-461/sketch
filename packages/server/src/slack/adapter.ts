@@ -17,6 +17,7 @@ import type { DB } from "../db/schema";
 import { type Attachment, downloadSlackFile } from "../files";
 import type { Logger } from "../logger";
 import type { QueueManager } from "../queue";
+import type { TaskScheduler } from "../scheduler/service";
 import { slackApiCall } from "./api";
 import { SlackBot, type SlackFile } from "./bot";
 import { createSlackMessageHandler } from "./message-handler";
@@ -45,6 +46,7 @@ export interface SlackAdapterDeps {
   runAgent: (params: RunAgentParams) => Promise<AgentResult>;
   buildMcpServers: (email: string | null) => Promise<Record<string, McpServerConfig>>;
   findIntegrationProvider: () => Promise<{ type: string; credentials: string } | null>;
+  scheduler?: TaskScheduler;
 }
 
 export async function validateSlackTokens(botToken: string, appToken: string) {
@@ -86,6 +88,7 @@ export function createConfiguredSlackBot(tokens: { botToken: string; appToken: s
     runAgent,
     buildMcpServers,
     findIntegrationProvider,
+    scheduler,
   } = deps;
   const maxFileBytes = config.MAX_FILE_SIZE_MB * 1024 * 1024;
 
@@ -168,6 +171,13 @@ export function createConfiguredSlackBot(tokens: { botToken: string; appToken: s
           attachments: attachments.length > 0 ? attachments : undefined,
           integrationMcpServers,
           findIntegrationProvider,
+          taskContext: {
+            platform: "slack" as const,
+            contextType: "dm" as const,
+            deliveryTarget: message.channelId,
+            createdBy: user.id,
+          },
+          scheduler,
         });
 
         for (const filePath of result.pendingUploads) {
@@ -339,6 +349,14 @@ export function createConfiguredSlackBot(tokens: { botToken: string; appToken: s
           },
           integrationMcpServers,
           findIntegrationProvider,
+          taskContext: {
+            platform: "slack" as const,
+            contextType: "channel" as const,
+            deliveryTarget: message.channelId,
+            createdBy: user.id,
+            threadTs: message.threadTs ? threadTs : undefined,
+          },
+          scheduler,
         });
 
         for (const filePath of result.pendingUploads) {
