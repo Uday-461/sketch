@@ -18,6 +18,7 @@ import { createApp } from "./http";
 import { buildMcpConfig } from "./integrations/factory";
 import { createLogger } from "./logger";
 import { QueueManager } from "./queue";
+import { TaskScheduler } from "./scheduler/service";
 import { syncFeaturedSkills } from "./skills/sync";
 import { createConfiguredSlackBot, validateSlackTokens } from "./slack/adapter";
 import type { SlackBot } from "./slack/bot";
@@ -93,6 +94,29 @@ export async function createServer(config: Config, options?: CreateServerOptions
   const userCache = new UserCache();
   let slack: SlackBot | null = null;
 
+  // 8. WhatsApp
+  const whatsapp = new WhatsAppBot({ db, logger });
+  const groupBuffer = new GroupBuffer();
+
+  // 8.5. Task scheduler — getSlack is a lazy getter so the live slack reference is captured correctly
+  const scheduler = new TaskScheduler({
+    db,
+    config,
+    logger,
+    queueManager,
+    getSlack: () => slack,
+    whatsapp,
+    settingsRepo,
+    runAgent,
+    buildMcpServers,
+    findIntegrationProvider: async () => {
+      const row = await mcpServersRepo.findIntegrationProvider();
+      if (!row || row.type == null) return null;
+      return { type: row.type, credentials: row.credentials };
+    },
+  });
+  await scheduler.start();
+
   const slackAdapterDeps = {
     db,
     config,
@@ -107,6 +131,7 @@ export async function createServer(config: Config, options?: CreateServerOptions
       if (!row || row.type == null) return null;
       return { type: row.type, credentials: row.credentials };
     },
+    scheduler,
   };
 
   const startSlackBotIfConfigured = createSlackStartupManager({
@@ -130,10 +155,6 @@ export async function createServer(config: Config, options?: CreateServerOptions
     await startSlackBotIfConfigured().catch(() => {});
   }
 
-  // 8. WhatsApp
-  const whatsapp = new WhatsAppBot({ db, logger });
-  const groupBuffer = new GroupBuffer();
-
   wireWhatsAppHandlers(whatsapp, {
     db,
     config,
@@ -148,6 +169,7 @@ export async function createServer(config: Config, options?: CreateServerOptions
       if (!row || row.type == null) return null;
       return { type: row.type, credentials: row.credentials };
     },
+    scheduler,
   });
 
   // 9. HTTP server
@@ -194,6 +216,7 @@ export async function createServer(config: Config, options?: CreateServerOptions
   // 11. Shutdown handle
   async function shutdown() {
     logger.info("Shutting down...");
+    scheduler.stop();
     if (slack) await slack.stop();
     await whatsapp.stop();
     server.close();
