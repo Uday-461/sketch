@@ -1,7 +1,7 @@
 import type { ScheduledTaskListItem } from "@/lib/api";
 import { server } from "@/test/msw";
 import { renderWithProviders } from "@/test/utils";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -132,26 +132,28 @@ describe("ScheduledTasksPage", () => {
     });
   });
 
-  it("shows creator names for admins and only member-visible rows for members", async () => {
+  it("shows creator names for admins and hides them for members", async () => {
     installTaskHandlers([
-      buildTask(),
+      buildTask({ creatorName: "Alice Admin" }),
       buildTask({
         id: "task-2",
         prompt: "Send a WhatsApp follow-up",
         platform: "whatsapp",
         contextType: "dm",
         deliveryTarget: "919999999999@s.whatsapp.net",
-        targetLabel: "Alice Member",
+        targetLabel: "Bob User",
         targetKindLabel: "WhatsApp DM",
+        creatorName: "Alice Admin",
       }),
     ]);
 
     const { unmount } = renderWithProviders(<ScheduledTasksPage />);
 
     await waitFor(() => {
-      expect(screen.getAllByText("Created by: Alice Member")).toHaveLength(2);
+      expect(screen.getByText("Post the Monday revenue summary")).toBeInTheDocument();
     });
     expect(screen.getByText("Send a WhatsApp follow-up")).toBeInTheDocument();
+    expect(screen.getAllByText(/Alice Admin/)).toHaveLength(2);
 
     unmount();
 
@@ -163,7 +165,7 @@ describe("ScheduledTasksPage", () => {
             buildTask({
               id: "task-member",
               prompt: "Only my task",
-              creatorName: "Alice Member",
+              creatorName: "Alice Admin",
             }),
           ],
         });
@@ -176,7 +178,7 @@ describe("ScheduledTasksPage", () => {
       expect(screen.getByText("Only my task")).toBeInTheDocument();
     });
     expect(screen.queryByText("Send a WhatsApp follow-up")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Created by:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Alice Admin/)).not.toBeInTheDocument();
   });
 
   it("renders expanded task details for troubleshooting", async () => {
@@ -204,7 +206,7 @@ describe("ScheduledTasksPage", () => {
     expect(screen.getByText("UTC")).toBeInTheDocument();
   });
 
-  it("pauses an active task and swaps the visible status", async () => {
+  it("pauses an active task via the dropdown menu", async () => {
     installTaskHandlers([buildTask()]);
 
     const user = userEvent.setup();
@@ -214,15 +216,15 @@ describe("ScheduledTasksPage", () => {
       expect(screen.getByText("Active")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: /Pause Post the Monday revenue summary/i }));
+    await user.click(screen.getByRole("button", { name: /Task actions for Post the Monday revenue summary/i }));
+    await user.click(screen.getByRole("menuitem", { name: /pause/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Paused")).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /Resume Post the Monday revenue summary/i })).toBeInTheDocument();
   });
 
-  it("resumes a paused task and swaps the visible status", async () => {
+  it("resumes a paused task via the dropdown menu", async () => {
     installTaskHandlers([
       buildTask({
         status: "paused",
@@ -238,15 +240,15 @@ describe("ScheduledTasksPage", () => {
       expect(screen.getByText("Paused")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: /Resume Post the Monday revenue summary/i }));
+    await user.click(screen.getByRole("button", { name: /Task actions for Post the Monday revenue summary/i }));
+    await user.click(screen.getByRole("menuitem", { name: /resume/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Active")).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /Pause Post the Monday revenue summary/i })).toBeInTheDocument();
   });
 
-  it("deletes a task after confirmation", async () => {
+  it("deletes a task after confirmation via the dropdown menu", async () => {
     installTaskHandlers([buildTask()]);
 
     const user = userEvent.setup();
@@ -256,13 +258,14 @@ describe("ScheduledTasksPage", () => {
       expect(screen.getByText("Post the Monday revenue summary")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: /Delete Post the Monday revenue summary/i }));
+    await user.click(screen.getByRole("button", { name: /Task actions for Post the Monday revenue summary/i }));
+    await user.click(screen.getByRole("menuitem", { name: /delete/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Delete scheduled task?")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
       expect(screen.getByText("No scheduled tasks yet")).toBeInTheDocument();
@@ -276,13 +279,14 @@ describe("ScheduledTasksPage", () => {
         deliveryTarget: "unknown@g.us",
         targetLabel: "unknown@g.us",
         targetKindLabel: "WhatsApp group",
+        platform: "whatsapp",
       }),
     ]);
 
     renderWithProviders(<ScheduledTasksPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("unknown@g.us")).toBeInTheDocument();
+      expect(screen.getByText(/unknown@g\.us/)).toBeInTheDocument();
     });
   });
 });

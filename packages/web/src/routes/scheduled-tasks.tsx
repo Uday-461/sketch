@@ -10,11 +10,29 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { type ScheduledTaskListItem, api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useDashboardAuth } from "@/routes/dashboard";
-import { CaretRightIcon, PauseIcon, PlayIcon, SpinnerGapIcon, TrashIcon } from "@phosphor-icons/react";
+import {
+  CaretRightIcon,
+  ClockIcon,
+  DotsThreeIcon,
+  PauseIcon,
+  PlayIcon,
+  SlackLogoIcon,
+  SpinnerGapIcon,
+  TrashIcon,
+  WhatsappLogoIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute } from "@tanstack/react-router";
 import { useState } from "react";
@@ -142,9 +160,11 @@ export function ScheduledTasksPage() {
                   isAdmin={isAdmin}
                   isExpanded={expandedTaskId === task.id}
                   isLast={index === tasks.length - 1}
-                  isPausing={pauseMutation.isPending && pauseMutation.variables === task.id}
-                  isResuming={resumeMutation.isPending && resumeMutation.variables === task.id}
-                  isDeleting={deleteMutation.isPending && deleteMutation.variables === task.id}
+                  isMutating={
+                    (pauseMutation.isPending && pauseMutation.variables === task.id) ||
+                    (resumeMutation.isPending && resumeMutation.variables === task.id) ||
+                    (deleteMutation.isPending && deleteMutation.variables === task.id)
+                  }
                   onToggleExpanded={() => setExpandedTaskId((current) => (current === task.id ? null : task.id))}
                   onPause={() => pauseMutation.mutate(task.id)}
                   onResume={() => resumeMutation.mutate(task.id)}
@@ -172,14 +192,24 @@ export function ScheduledTasksPage() {
   );
 }
 
+function PlatformIcon({ platform }: { platform: "slack" | "whatsapp" }) {
+  return (
+    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted">
+      {platform === "slack" ? (
+        <SlackLogoIcon size={18} className="text-muted-foreground" />
+      ) : (
+        <WhatsappLogoIcon size={18} className="text-muted-foreground" />
+      )}
+    </div>
+  );
+}
+
 function TaskRow({
   task,
   isAdmin,
   isExpanded,
   isLast,
-  isPausing,
-  isResuming,
-  isDeleting,
+  isMutating,
   onToggleExpanded,
   onPause,
   onResume,
@@ -189,105 +219,116 @@ function TaskRow({
   isAdmin: boolean;
   isExpanded: boolean;
   isLast: boolean;
-  isPausing: boolean;
-  isResuming: boolean;
-  isDeleting: boolean;
+  isMutating: boolean;
   onToggleExpanded: () => void;
   onPause: () => void;
   onResume: () => void;
   onDelete: () => void;
 }) {
   const targetLabel = task.targetLabel || task.deliveryTarget;
+  const hasActions = task.canPause || task.canResume || task.canDelete;
 
   return (
     <div className={cn(!isLast && "border-b border-border")}>
-      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex items-center gap-4 px-4 py-4 transition-colors hover:bg-muted/50">
+        <PlatformIcon platform={task.platform} />
+
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-start gap-3 text-left"
+          className="min-w-0 flex-1 text-left"
           onClick={onToggleExpanded}
           aria-expanded={isExpanded}
           aria-label={isExpanded ? `Hide details for ${task.prompt}` : `Show details for ${task.prompt}`}
         >
-          <span className="mt-0.5 rounded-md border border-border bg-background p-1 text-muted-foreground">
-            <CaretRightIcon size={12} className={cn("transition-transform", isExpanded && "rotate-90")} />
-          </span>
-
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="min-w-0 flex-1 text-sm font-medium leading-6 text-foreground line-clamp-2">{task.prompt}</p>
-              <TaskStatusBadge status={task.status} />
-            </div>
-
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <Badge variant="outline">{task.targetKindLabel}</Badge>
-              <span>{targetLabel}</span>
-              <span className="hidden sm:inline">•</span>
-              <span>{task.scheduleLabel}</span>
-            </div>
-
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span>Session: {formatSessionMode(task.sessionMode)}</span>
-              <span>Next run: {formatDateTime(task.nextRunAt)}</span>
-              <span>Last run: {formatDateTime(task.lastRunAt)}</span>
-              <span>Created: {formatDateTime(task.createdAt)}</span>
-              {isAdmin ? <span>Created by: {task.creatorName ?? task.createdBy ?? "Unknown"}</span> : null}
-            </div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="truncate text-sm font-medium text-foreground">{task.prompt}</p>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  {task.prompt}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {task.scheduleLabel}
+              <span className="mx-1.5">·</span>
+              {targetLabel}
+              {isAdmin && task.creatorName ? (
+                <>
+                  <span className="mx-1.5">·</span>
+                  {task.creatorName}
+                </>
+              ) : null}
+            </p>
           </div>
         </button>
 
-        <div className="flex shrink-0 items-center gap-2 self-end sm:self-start">
-          {task.canPause ? (
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={onPause}
-              disabled={isPausing || isResuming || isDeleting}
-              aria-label={`Pause ${task.prompt}`}
-            >
-              {isPausing ? <SpinnerGapIcon size={12} className="animate-spin" /> : <PauseIcon size={12} />}
-              Pause
-            </Button>
-          ) : null}
+        <TaskStatusBadge status={task.status} />
 
-          {task.canResume ? (
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={onResume}
-              disabled={isPausing || isResuming || isDeleting}
-              aria-label={`Resume ${task.prompt}`}
-            >
-              {isResuming ? <SpinnerGapIcon size={12} className="animate-spin" /> : <PlayIcon size={12} />}
-              Resume
-            </Button>
-          ) : null}
+        <button
+          type="button"
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted"
+          onClick={onToggleExpanded}
+          aria-expanded={isExpanded}
+          aria-label={isExpanded ? `Collapse ${task.prompt}` : `Expand ${task.prompt}`}
+        >
+          <CaretRightIcon size={14} className={cn("transition-transform", isExpanded && "rotate-90")} />
+        </button>
 
-          {task.canDelete ? (
-            <Button
-              variant="ghost"
-              size="xs"
-              className="text-destructive hover:text-destructive"
-              onClick={onDelete}
-              disabled={isPausing || isResuming || isDeleting}
-              aria-label={`Delete ${task.prompt}`}
-            >
-              {isDeleting ? <SpinnerGapIcon size={12} className="animate-spin" /> : <TrashIcon size={12} />}
-              Delete
-            </Button>
-          ) : null}
-        </div>
+        {hasActions ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0"
+                aria-label={`Task actions for ${task.prompt}`}
+              >
+                <DotsThreeIcon size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {task.canPause ? (
+                <DropdownMenuItem disabled={isMutating} onClick={onPause}>
+                  <PauseIcon size={16} />
+                  Pause
+                </DropdownMenuItem>
+              ) : null}
+              {task.canResume ? (
+                <DropdownMenuItem disabled={isMutating} onClick={onResume}>
+                  <PlayIcon size={16} />
+                  Resume
+                </DropdownMenuItem>
+              ) : null}
+              {task.canDelete && (task.canPause || task.canResume) ? <DropdownMenuSeparator /> : null}
+              {task.canDelete ? (
+                <DropdownMenuItem variant="destructive" disabled={isMutating} onClick={onDelete}>
+                  <TrashIcon size={16} />
+                  Delete
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <div className="size-7 shrink-0" />
+        )}
       </div>
 
       {isExpanded ? (
         <div className="border-t border-border bg-muted/20 px-4 py-4">
           <dl className="grid gap-4 text-sm sm:grid-cols-2">
-            <DetailItem label="Delivery target" value={task.deliveryTarget} />
+            <DetailItem label="Target" value={`${task.targetKindLabel} · ${targetLabel}`} />
+            <DetailItem label="Schedule" value={`${task.scheduleType} · ${task.scheduleValue}`} />
             <DetailItem label="Timezone" value={task.timezone} />
-            <DetailItem label="Task ID" value={task.id} />
-            <DetailItem label="Schedule type" value={task.scheduleType} />
-            <DetailItem label="Schedule value" value={task.scheduleValue} />
-            <DetailItem label="Thread" value={task.threadTs ?? "None"} />
+            <DetailItem label="Session mode" value={formatSessionMode(task.sessionMode)} />
+            <DetailItem label="Next run" value={formatDateTime(task.nextRunAt)} />
+            <DetailItem label="Last run" value={formatDateTime(task.lastRunAt)} />
+            <DetailItem label="Created" value={formatDateTime(task.createdAt)} />
+            {isAdmin ? <DetailItem label="Created by" value={task.creatorName ?? task.createdBy ?? "Unknown"} /> : null}
+            <DetailItem label="Delivery target" value={task.deliveryTarget} />
+            {task.threadTs ? <DetailItem label="Thread" value={task.threadTs} /> : null}
           </dl>
         </div>
       ) : null}
@@ -306,14 +347,22 @@ function DetailItem({ label, value }: { label: string; value: string }) {
 
 function TaskStatusBadge({ status }: { status: ScheduledTaskListItem["status"] }) {
   if (status === "active") {
-    return <Badge className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">Active</Badge>;
+    return <Badge className="shrink-0 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">Active</Badge>;
   }
 
   if (status === "paused") {
-    return <Badge variant="secondary">Paused</Badge>;
+    return (
+      <Badge variant="secondary" className="shrink-0">
+        Paused
+      </Badge>
+    );
   }
 
-  return <Badge variant="outline">Completed</Badge>;
+  return (
+    <Badge variant="outline" className="shrink-0">
+      Completed
+    </Badge>
+  );
 }
 
 function DeleteTaskDialog({
@@ -329,7 +378,7 @@ function DeleteTaskDialog({
 }) {
   return (
     <AlertDialog open={!!task} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent className="sm:max-w-sm">
         <AlertDialogHeader>
           <AlertDialogTitle>Delete scheduled task?</AlertDialogTitle>
           <AlertDialogDescription>
@@ -356,9 +405,12 @@ function DeleteTaskDialog({
 
 function EmptyState() {
   return (
-    <div className="rounded-lg border border-border bg-card px-6 py-10 text-center">
-      <h2 className="text-sm font-medium">No scheduled tasks yet</h2>
-      <p className="mt-2 text-sm text-muted-foreground">
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-center">
+      <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+        <ClockIcon size={24} className="text-muted-foreground" />
+      </div>
+      <p className="mt-4 text-sm font-medium">No scheduled tasks yet</p>
+      <p className="mt-1 max-w-xs text-xs text-muted-foreground">
         Create a scheduled task by asking the assistant to remind you or run something on a schedule.
       </p>
     </div>
@@ -367,33 +419,31 @@ function EmptyState() {
 
 function ErrorState() {
   return (
-    <div className="rounded-lg border border-border bg-card px-6 py-10 text-center">
-      <p className="text-sm text-destructive">Failed to load scheduled tasks.</p>
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-center">
+      <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+        <ClockIcon size={24} className="text-muted-foreground" />
+      </div>
+      <p className="mt-4 text-sm font-medium text-destructive">Failed to load scheduled tasks.</p>
     </div>
   );
 }
 
 function LoadingSkeleton() {
-  const skeletonRows = ["task-skeleton-1", "task-skeleton-2", "task-skeleton-3"];
-
   return (
-    <div className="rounded-lg border border-border bg-card">
-      {skeletonRows.map((rowId, index) => (
-        <div key={rowId} className={cn("space-y-3 px-4 py-4", index < 2 && "border-b border-border")}>
-          <div className="flex items-start justify-between gap-4">
+    <div className="space-y-3">
+      <Skeleton className="h-4 w-32" />
+      <div className="rounded-lg border border-border bg-card">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className={cn("flex items-center gap-4 px-4 py-4", i < 3 && "border-b border-border")}>
+            <Skeleton className="size-9 rounded-full" />
             <div className="min-w-0 flex-1 space-y-2">
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-3 w-5/6" />
-              <Skeleton className="h-3 w-2/3" />
+              <Skeleton className="h-4 w-3/5" />
+              <Skeleton className="h-3 w-2/5" />
             </div>
-            <Skeleton className="h-6 w-16" />
+            <Skeleton className="h-5 w-14 rounded-full" />
           </div>
-          <div className="flex gap-2">
-            <Skeleton className="h-6 w-16" />
-            <Skeleton className="h-6 w-16" />
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
