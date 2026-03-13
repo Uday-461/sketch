@@ -178,6 +178,7 @@ export async function createServer(config: Config, options?: CreateServerOptions
   const app = createApp(db, config, {
     whatsapp,
     getSlack: () => slack,
+    scheduler,
     onSlackTokensUpdated: async (tokens) => {
       if (!tokens) return;
       await startSlackBotIfConfigured(tokens);

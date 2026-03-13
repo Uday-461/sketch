@@ -41,6 +41,10 @@ export function createScheduledTaskRepository(db: Kysely<DB>) {
       return db.selectFrom("scheduled_tasks").selectAll().where("id", "=", id).executeTakeFirst();
     },
 
+    async listAll(): Promise<ScheduledTaskRow[]> {
+      return db.selectFrom("scheduled_tasks").selectAll().orderBy("created_at", "desc").execute();
+    },
+
     async listByDeliveryTarget(deliveryTarget: string): Promise<ScheduledTaskRow[]> {
       return db
         .selectFrom("scheduled_tasks")

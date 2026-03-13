@@ -98,6 +98,29 @@ describe("getById()", () => {
   });
 });
 
+describe("listAll()", () => {
+  it("returns tasks ordered newest-first", async () => {
+    await repo.add({ ...baseTask, id: "task-1", created_by: "U_ONE", prompt: "Earlier task" });
+    await repo.add({ ...baseTask, id: "task-2", created_by: "U_TWO", prompt: "Later task" });
+
+    await db
+      .updateTable("scheduled_tasks")
+      .set({ created_at: "2026-03-13T10:00:00.000Z" })
+      .where("id", "=", "task-1")
+      .execute();
+    await db
+      .updateTable("scheduled_tasks")
+      .set({ created_at: "2026-03-14T10:00:00.000Z" })
+      .where("id", "=", "task-2")
+      .execute();
+
+    const results = await repo.listAll();
+    expect(results).toHaveLength(2);
+    expect(results[0].id).toBe("task-2");
+    expect(results[1].id).toBe("task-1");
+  });
+});
+
 describe("listByDeliveryTarget()", () => {
   it("returns only tasks matching the delivery target", async () => {
     await repo.add({ ...baseTask, delivery_target: "U_ALPHA", prompt: "Task A" });

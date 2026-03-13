@@ -13,6 +13,7 @@ import { channelRoutes } from "./api/channels";
 import { healthRoutes } from "./api/health";
 import { mcpServerRoutes } from "./api/mcp-servers";
 import { createAuthMiddleware } from "./api/middleware";
+import { scheduledTaskRoutes } from "./api/scheduled-tasks";
 import { settingsRoutes } from "./api/settings";
 import { setupRoutes } from "./api/setup";
 import { skillsRoutes } from "./api/skills";
@@ -23,6 +24,7 @@ import { createMcpServerRepository } from "./db/repositories/mcp-servers";
 import { createSettingsRepository } from "./db/repositories/settings";
 import { createUserRepository } from "./db/repositories/users";
 import type { DB } from "./db/schema";
+import type { TaskScheduler } from "./scheduler/service";
 import type { SlackBot } from "./slack/bot";
 import type { WhatsAppBot } from "./whatsapp/bot";
 
@@ -33,6 +35,7 @@ interface AppDeps {
   onSlackDisconnect?: () => Promise<void>;
   onLlmSettingsUpdated?: () => Promise<void>;
   onSmtpUpdated?: () => Promise<void>;
+  scheduler?: Pick<TaskScheduler, "pauseTask" | "resumeTask" | "removeTask">;
   logger?: Logger;
 }
 
@@ -60,6 +63,9 @@ export function createApp(db: Kysely<DB>, config: Config, deps?: AppDeps) {
   app.route("/api/skills", skillsRoutes(config));
   app.route("/api/users", userRoutes(users, { settings, db, logger, config }));
   app.route("/api/mcp-servers", mcpServerRoutes(mcpServers, users));
+  if (deps?.scheduler) {
+    app.route("/api/scheduled-tasks", scheduledTaskRoutes(db, deps.scheduler));
+  }
   app.route(
     "/api/channels",
     channelRoutes({
