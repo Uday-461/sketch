@@ -69,6 +69,8 @@ export interface IntegrationDefinition {
   color: string;
   /** Auth type for the connect dialog. */
   authType: "api_key" | "oauth" | "service_account";
+  /** If true, uses OAuth redirect flow instead of manual credential entry. */
+  oauthRedirect?: boolean;
   /** Fields shown in the connect dialog. */
   authFields: AuthField[];
   /** What the scope picker selects (spaces, folders, teams, etc.) */
@@ -93,6 +95,7 @@ export const INTEGRATIONS: IntegrationDefinition[] = [
     category: "Storage",
     color: "#4285F4",
     authType: "oauth",
+    oauthRedirect: true,
     authFields: [
       {
         key: "client_id",
@@ -108,13 +111,6 @@ export const INTEGRATIONS: IntegrationDefinition[] = [
         placeholder: "GOCSPX-...",
         helpText: "OAuth 2.0 Client Secret",
       },
-      {
-        key: "refresh_token",
-        label: "Refresh Token",
-        type: "password",
-        placeholder: "1//0...",
-        helpText: "Obtained after OAuth consent flow (use Google OAuth Playground or your own redirect)",
-      },
     ],
     scopeLabel: "folders",
     itemNoun: "files",
@@ -122,9 +118,8 @@ export const INTEGRATIONS: IntegrationDefinition[] = [
     connectSteps: [
       "Create an OAuth 2.0 Client in Google Cloud Console",
       "Enable the Google Drive API for your project",
-      "Authorize with scope: https://www.googleapis.com/auth/drive.readonly",
-      "Obtain a refresh token (e.g. via OAuth Playground → Exchange auth code)",
-      "Paste the Client ID, Client Secret, and Refresh Token below",
+      "Add the redirect URI shown below to your OAuth client",
+      "Paste the Client ID and Client Secret, then connect with Google",
     ],
   },
   {

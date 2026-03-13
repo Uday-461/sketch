@@ -136,8 +136,7 @@ function taskToSyncedItem(
   task: ClickUpTask,
   spaceName: string,
   folderName: string | undefined,
-  accessibleBy: string[] | null,
-  accessEmails?: Record<string, string>,
+  accessScope?: SyncedItem["accessScope"],
 ): SyncedItem {
   const hasDescription = task.description && task.description.trim().length > 0;
 
@@ -169,20 +168,13 @@ function taskToSyncedItem(
     contentHash: contentHash(content),
     sourceCreatedAt: parseClickUpTimestamp(task.date_created ?? null),
     sourceUpdatedAt: parseClickUpTimestamp(task.date_updated ?? null),
-    accessibleBy,
-    accessEmails,
+    accessScope,
   };
 }
 
-/** Build a mapping of numeric user ID → email from ClickUp member lists. */
-function buildEmailMap(members: ClickUpMember[]): Record<string, string> {
-  const map: Record<string, string> = {};
-  for (const m of members) {
-    if (m.user.email) {
-      map[String(m.user.id)] = m.user.email;
-    }
-  }
-  return map;
+/** Extract emails from ClickUp member lists. */
+function extractMemberEmails(members: ClickUpMember[]): string[] {
+  return members.filter((m) => m.user.email).map((m) => m.user.email as string);
 }
 
 async function refreshClickUpToken(credentials: OAuthCredentials): Promise<OAuthCredentials> {
@@ -228,10 +220,8 @@ export function createClickUpConnector(): Connector {
       };
 
       for (const team of teamsRes.teams) {
-        // All workspace member user IDs — used for public spaces
-        const workspaceMemberIds = team.members.map((m) => String(m.user.id));
-        const workspaceEmailMap = buildEmailMap(team.members);
-        logger.info({ teamId: team.id, memberCount: workspaceMemberIds.length }, "Workspace members resolved");
+        const workspaceEmails = extractMemberEmails(team.members);
+        logger.info({ teamId: team.id, memberCount: workspaceEmails.length }, "Workspace members resolved");
 
         const spacesRes = (await clickupRequest(`/team/${team.id}/space`, token, logger)) as {
           spaces: ClickUpSpace[];
@@ -242,22 +232,30 @@ export function createClickUpConnector(): Connector {
             continue;
           }
 
-          // Resolve who can access this space's tasks.
-          // Private spaces include members in the response; public spaces = all workspace members.
-          let spaceAccessibleBy: string[] | null;
-          let spaceEmailMap: Record<string, string>;
+          // Build access scope for this space.
+          // Private spaces use space members; public spaces use all workspace members.
+          let spaceScope: SyncedItem["accessScope"];
           if (space.private && space.members) {
-            spaceAccessibleBy = space.members.map((m) => String(m.user.id));
-            spaceEmailMap = buildEmailMap(space.members);
+            const memberEmails = extractMemberEmails(space.members);
+            spaceScope = {
+              scopeType: "space",
+              providerScopeId: space.id,
+              label: space.name,
+              memberEmails,
+            };
             logger.debug(
-              { spaceId: space.id, spaceName: space.name, memberCount: spaceAccessibleBy.length },
+              { spaceId: space.id, spaceName: space.name, memberCount: memberEmails.length },
               "Private space — using space members",
             );
           } else {
-            spaceAccessibleBy = workspaceMemberIds;
-            spaceEmailMap = workspaceEmailMap;
+            spaceScope = {
+              scopeType: "workspace",
+              providerScopeId: team.id,
+              label: "Workspace",
+              memberEmails: workspaceEmails,
+            };
             logger.debug(
-              { spaceId: space.id, spaceName: space.name, memberCount: spaceAccessibleBy.length },
+              { spaceId: space.id, spaceName: space.name, memberCount: workspaceEmails.length },
               "Public space — using workspace members",
             );
           }
@@ -270,15 +268,7 @@ export function createClickUpConnector(): Connector {
               lists: ClickUpList[];
             };
             for (const list of listsRes.lists) {
-              yield* fetchTasksFromList(
-                list.id,
-                space.name,
-                folder.name,
-                token,
-                logger,
-                spaceAccessibleBy,
-                spaceEmailMap,
-              );
+              yield* fetchTasksFromList(list.id, space.name, folder.name, token, logger, spaceScope);
             }
           }
 
@@ -286,7 +276,7 @@ export function createClickUpConnector(): Connector {
             lists: ClickUpList[];
           };
           for (const list of folderlessListsRes.lists) {
-            yield* fetchTasksFromList(list.id, space.name, undefined, token, logger, spaceAccessibleBy, spaceEmailMap);
+            yield* fetchTasksFromList(list.id, space.name, undefined, token, logger, spaceScope);
           }
         }
       }
@@ -308,8 +298,7 @@ async function* fetchTasksFromList(
   folderName: string | undefined,
   token: string,
   logger: Logger,
-  accessibleBy: string[] | null = null,
-  accessEmails?: Record<string, string>,
+  accessScope?: SyncedItem["accessScope"],
 ): AsyncGenerator<SyncedItem> {
   try {
     const tasksRes = (await clickupRequest(
@@ -319,7 +308,7 @@ async function* fetchTasksFromList(
     )) as { tasks: ClickUpTask[] };
 
     for (const task of tasksRes.tasks) {
-      yield taskToSyncedItem(task, spaceName, folderName, accessibleBy, accessEmails);
+      yield taskToSyncedItem(task, spaceName, folderName, accessScope);
     }
   } catch (err) {
     logger.warn({ err, listId }, "Failed to fetch tasks from list");

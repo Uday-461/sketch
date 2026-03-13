@@ -175,7 +175,7 @@ function issueToSyncedItem(issue: LinearIssue): SyncedItem {
     contentHash: contentHash(content),
     sourceCreatedAt: issue.createdAt,
     sourceUpdatedAt: issue.updatedAt,
-    accessibleBy: null, // TODO: populate from team membership + privacy
+    // TODO: populate access scope from team membership + privacy
   };
 }
 
@@ -207,7 +207,7 @@ function projectToSyncedItem(project: LinearProject): SyncedItem {
     contentHash: contentHash(content),
     sourceCreatedAt: project.createdAt,
     sourceUpdatedAt: project.updatedAt,
-    accessibleBy: null, // TODO: populate from team membership + privacy
+    // TODO: populate access scope from team membership + privacy
   };
 }
 

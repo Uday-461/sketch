@@ -20,6 +20,10 @@ export function createUserRepository(db: Kysely<DB>) {
       return db.selectFrom("users").selectAll().where("id", "=", id).executeTakeFirst();
     },
 
+    async findByEmail(email: string) {
+      return db.selectFrom("users").selectAll().where("email", "=", email).executeTakeFirst();
+    },
+
     async create(data: { name: string; slackUserId?: string; whatsappNumber?: string; email?: string }) {
       const id = randomUUID();
       await db

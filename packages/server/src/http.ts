@@ -17,14 +17,15 @@ import { providerIdentityRoutes } from "./api/provider-identities";
 import { settingsRoutes } from "./api/settings";
 import { setupRoutes } from "./api/setup";
 import { skillsRoutes } from "./api/skills";
-import { teamRoutes } from "./api/teams";
+
+import { oauthRoutes } from "./api/oauth";
 import { userRoutes } from "./api/users";
 import { whatsappRoutes } from "./api/whatsapp";
 import type { Config } from "./config";
 import { createConnectorRepository } from "./db/repositories/connectors";
 import { createProviderIdentityRepository } from "./db/repositories/provider-identities";
 import { createSettingsRepository } from "./db/repositories/settings";
-import { createTeamRepository } from "./db/repositories/teams";
+
 import { createUserRepository } from "./db/repositories/users";
 import type { DB } from "./db/schema";
 import type { SlackBot } from "./slack/bot";
@@ -44,8 +45,6 @@ export function createApp(db: Kysely<DB>, config: Config, deps?: AppDeps) {
   const settings = createSettingsRepository(db);
   const users = createUserRepository(db);
   const connectors = createConnectorRepository(db);
-  const teams = createTeamRepository(db);
-
   // Auth middleware on all /api/* routes (with setup mode + auth checks)
   app.use("/api/*", createAuthMiddleware(settings));
 
@@ -82,10 +81,12 @@ export function createApp(db: Kysely<DB>, config: Config, deps?: AppDeps) {
     app.route("/api/connectors", connectorRoutes(connectors, db, deps.logger));
   }
 
-  app.route("/api/teams", teamRoutes(teams, users, connectors));
-
   const identities = createProviderIdentityRepository(db);
   app.route("/api/identities", providerIdentityRoutes(identities, users));
+
+  if (deps?.logger) {
+    app.route("/api/oauth", oauthRoutes(settings, identities, connectors, users, db, deps.logger, config.BASE_URL));
+  }
 
   // Static file serving for the SPA (production only — dev uses Vite dev server)
   // Resolve path relative to this file's location (works with both tsx and tsdown bundle)

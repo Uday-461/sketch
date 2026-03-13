@@ -10,15 +10,17 @@
  * - Initial: full crawl of selected shared drives
  * - Incremental: use changes.list with startPageToken cursor
  * - Google Workspace files exported as plain text (Docs, Sheets, Slides)
- * - Binary files: metadata only (no content extraction)
+ * - Binary documents (PDF, DOCX, XLSX, PPTX) extracted via extractors module
  *
  * Access model:
  * - Permissions fetched at the shared drive level (one API call per drive)
  * - All files in a drive inherit the drive's member list
- * - accessibleBy = email addresses of drive members
+ * - Shared drives use access scopes (drive-level member lists)
+ * - My Drive files use per-file permission emails
  */
 import { createHash } from "node:crypto";
 import type { Logger } from "pino";
+import { BINARY_EXTRACTABLE_MIMES, extractTextFromBinary } from "./extractors";
 import type { Connector, ConnectorCredentials, OAuthCredentials, SyncedItem } from "./types";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
@@ -217,6 +219,7 @@ async function fetchFileContent(
   logger: Logger,
 ): Promise<{ content: string; hash: string } | null> {
   try {
+    // 1. Google Workspace files — export via Drive export API
     const exportInfo = EXPORT_MIMES[file.mimeType];
 
     if (exportInfo) {
@@ -225,15 +228,10 @@ async function fetchFileContent(
         responseType: "text",
       })) as string;
 
-      if (text.length > MAX_CONTENT_BYTES) {
-        logger.debug({ fileId: file.id, fileName: file.name }, "Content truncated (too large)");
-        const truncated = text.slice(0, MAX_CONTENT_BYTES);
-        return { content: truncated, hash: contentHash(truncated) };
-      }
-
-      return { content: text, hash: contentHash(text) };
+      return truncateAndHash(text, file, logger);
     }
 
+    // 2. Native text files — download as text
     if (TEXT_MIMES.has(file.mimeType)) {
       const sizeBytes = file.size ? Number.parseInt(file.size, 10) : 0;
       if (sizeBytes > MAX_DOWNLOAD_BYTES) {
@@ -246,12 +244,26 @@ async function fetchFileContent(
         responseType: "text",
       })) as string;
 
-      if (text.length > MAX_CONTENT_BYTES) {
-        const truncated = text.slice(0, MAX_CONTENT_BYTES);
-        return { content: truncated, hash: contentHash(truncated) };
+      return truncateAndHash(text, file, logger);
+    }
+
+    // 3. Binary documents (PDF, DOCX, XLSX, PPTX) — download as buffer, then extract
+    if (BINARY_EXTRACTABLE_MIMES.has(file.mimeType)) {
+      const sizeBytes = file.size ? Number.parseInt(file.size, 10) : 0;
+      if (sizeBytes > MAX_DOWNLOAD_BYTES) {
+        logger.debug({ fileId: file.id, size: sizeBytes }, "Skipping binary download (too large)");
+        return null;
       }
 
-      return { content: text, hash: contentHash(text) };
+      const buffer = (await driveRequest(`/files/${file.id}`, accessToken, {
+        params: { alt: "media", supportsAllDrives: "true" },
+        responseType: "buffer",
+      })) as ArrayBuffer;
+
+      const text = await extractTextFromBinary(buffer, file.mimeType, logger);
+      if (!text) return null;
+
+      return truncateAndHash(text, file, logger);
     }
 
     return null;
@@ -261,13 +273,25 @@ async function fetchFileContent(
   }
 }
 
+function truncateAndHash(text: string, file: DriveFile, logger: Logger): { content: string; hash: string } | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.length > MAX_CONTENT_BYTES) {
+    logger.debug({ fileId: file.id, fileName: file.name }, "Content truncated (too large)");
+    const truncated = trimmed.slice(0, MAX_CONTENT_BYTES);
+    return { content: truncated, hash: contentHash(truncated) };
+  }
+
+  return { content: trimmed, hash: contentHash(trimmed) };
+}
+
 function fileToSyncedItem(
   file: DriveFile,
   content: string | null,
   hash: string | null,
   sourcePath: string | null,
-  accessibleBy: string[] | null,
-  accessEmails?: Record<string, string>,
+  access: { scope?: SyncedItem["accessScope"]; emails?: string[] | null },
 ): SyncedItem {
   const exportInfo = EXPORT_MIMES[file.mimeType];
 
@@ -282,8 +306,8 @@ function fileToSyncedItem(
     contentHash: hash,
     sourceCreatedAt: file.createdTime ?? null,
     sourceUpdatedAt: file.modifiedTime ?? null,
-    accessibleBy,
-    accessEmails,
+    accessScope: access.scope,
+    accessEmails: access.emails,
   };
 }
 
@@ -332,6 +356,50 @@ export interface FolderInfo {
   name: string;
 }
 
+export interface FolderContentItem {
+  id: string;
+  name: string;
+  mimeType: string;
+  isFolder: boolean;
+}
+
+/**
+ * List immediate children of a folder (files and subfolders).
+ * Used by the browse API to let users preview folder contents before syncing.
+ */
+export async function listFolderContents(accessToken: string, folderId: string): Promise<FolderContentItem[]> {
+  const items: FolderContentItem[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const params: Record<string, string> = {
+      q: `'${folderId}' in parents and trashed = false`,
+      fields: "nextPageToken, files(id, name, mimeType)",
+      pageSize: "100",
+      orderBy: "folder,name",
+    };
+    if (pageToken) params.pageToken = pageToken;
+
+    const result = (await driveRequest("/files", accessToken, { params })) as {
+      files?: Array<{ id: string; name: string; mimeType: string }>;
+      nextPageToken?: string;
+    };
+
+    for (const file of result.files ?? []) {
+      items.push({
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        isFolder: file.mimeType === FOLDER_MIME,
+      });
+    }
+
+    pageToken = result.nextPageToken;
+  } while (pageToken);
+
+  return items;
+}
+
 /**
  * List top-level folders in the user's My Drive.
  * Used by the browse API for the folder picker when no shared drives exist.
@@ -368,13 +436,8 @@ export async function listMyDriveFolders(accessToken: string): Promise<FolderInf
  * Fetch members of a shared drive.
  * Returns email addresses of all users with access.
  */
-async function fetchDriveMembers(
-  driveId: string,
-  accessToken: string,
-  logger: Logger,
-): Promise<{ emails: string[]; emailMap: Record<string, string> }> {
+async function fetchDriveMemberEmails(driveId: string, accessToken: string, logger: Logger): Promise<string[]> {
   const emails: string[] = [];
-  const emailMap: Record<string, string> = {};
   let pageToken: string | undefined;
 
   do {
@@ -393,7 +456,6 @@ async function fetchDriveMembers(
     for (const perm of result.permissions ?? []) {
       if (perm.type === "user" && perm.emailAddress) {
         emails.push(perm.emailAddress);
-        emailMap[perm.emailAddress] = perm.emailAddress;
       }
     }
 
@@ -401,25 +463,21 @@ async function fetchDriveMembers(
   } while (pageToken);
 
   logger.debug({ driveId, memberCount: emails.length }, "Fetched drive members");
-  return { emails, emailMap };
+  return emails;
 }
 
 /**
- * Extract per-file permissions from the inline permissions list.
+ * Extract per-file permission emails from the inline permissions list.
  * Used for My Drive files where permissions are per-file (not drive-level).
  */
-function extractFilePermissions(file: DriveFile): { emails: string[]; emailMap: Record<string, string> } {
+function extractFilePermissionEmails(file: DriveFile): string[] {
   const emails: string[] = [];
-  const emailMap: Record<string, string> = {};
-
   for (const perm of file.permissions ?? []) {
     if (perm.type === "user" && perm.emailAddress) {
       emails.push(perm.emailAddress);
-      emailMap[perm.emailAddress] = perm.emailAddress;
     }
   }
-
-  return { emails, emailMap };
+  return emails;
 }
 
 /**
@@ -501,18 +559,19 @@ export function createGoogleDriveConnector(): Connector {
       }
 
       const sharedDrives = (scopeConfig.sharedDrives as string[] | undefined) ?? [];
+      const myDriveFolders = (scopeConfig.folders as string[] | undefined) ?? [];
 
-      if (sharedDrives.length > 0) {
-        // Shared drive mode: sync each selected drive
-        for (const driveId of sharedDrives) {
-          if (cursor) {
-            yield* syncIncrementalDrive(creds.access_token, driveId, cursor, logger);
-          } else {
-            yield* syncSharedDrive(creds.access_token, driveId, logger);
-          }
+      // Sync selected shared drives
+      for (const driveId of sharedDrives) {
+        if (cursor) {
+          yield* syncIncrementalDrive(creds.access_token, driveId, cursor, logger);
+        } else {
+          yield* syncSharedDrive(creds.access_token, driveId, logger);
         }
-      } else {
-        // Legacy fallback: scopeConfig.folders or all files
+      }
+
+      // Sync My Drive folders (or all files if neither shared drives nor folders selected)
+      if (myDriveFolders.length > 0 || sharedDrives.length === 0) {
         if (cursor) {
           yield* syncIncremental(creds.access_token, cursor, logger);
         } else {
@@ -566,9 +625,20 @@ async function* syncSharedDrive(accessToken: string, driveId: string, logger: Lo
   })) as { id: string; name: string };
   const driveName = driveInfo.name;
 
-  // Get drive members for access control
-  const { emails: accessibleBy, emailMap } = await fetchDriveMembers(driveId, accessToken, logger);
-  logger.info({ driveId, driveName, memberCount: accessibleBy.length }, "Syncing shared drive");
+  // Get drive members for scope-level access control (may fail with readonly scope — non-fatal)
+  let driveScope: SyncedItem["accessScope"] | undefined;
+  try {
+    const memberEmails = await fetchDriveMemberEmails(driveId, accessToken, logger);
+    if (memberEmails.length > 0) {
+      driveScope = { scopeType: "drive", providerScopeId: driveId, label: driveName, memberEmails };
+    }
+  } catch (err) {
+    logger.warn(
+      { driveId, err },
+      "Could not fetch drive members (permissions API may require full drive scope) — continuing without access metadata",
+    );
+  }
+  logger.info({ driveId, driveName, memberCount: driveScope?.memberEmails.length ?? 0 }, "Syncing shared drive");
 
   // Cache for folder path resolution
   const folderCache = new Map<string, string>();
@@ -598,12 +668,11 @@ async function* syncSharedDrive(accessToken: string, driveId: string, logger: Lo
     };
 
     for (const file of result.files) {
-      // Skip folder entries — we only index files
       if (file.mimeType === FOLDER_MIME) continue;
 
       const fetched = await fetchFileContent(file, accessToken, logger);
       const sourcePath = await resolveFolderPath(file, driveName, accessToken, folderCache);
-      yield fileToSyncedItem(file, fetched?.content ?? null, fetched?.hash ?? null, sourcePath, accessibleBy, emailMap);
+      yield fileToSyncedItem(file, fetched?.content ?? null, fetched?.hash ?? null, sourcePath, { scope: driveScope });
       totalFiles++;
     }
 
@@ -623,12 +692,20 @@ async function* syncIncrementalDrive(
   startPageToken: string,
   logger: Logger,
 ): AsyncGenerator<SyncedItem> {
-  // Get drive info + members for access on changed files
+  // Get drive info + members for scope-level access on changed files
   const driveInfo = (await driveRequest(`/drives/${driveId}`, accessToken, {
     params: { fields: "id, name" },
   })) as { id: string; name: string };
   const driveName = driveInfo.name;
-  const { emails: accessibleBy, emailMap } = await fetchDriveMembers(driveId, accessToken, logger);
+  let driveScope: SyncedItem["accessScope"] | undefined;
+  try {
+    const memberEmails = await fetchDriveMemberEmails(driveId, accessToken, logger);
+    if (memberEmails.length > 0) {
+      driveScope = { scopeType: "drive", providerScopeId: driveId, label: driveName, memberEmails };
+    }
+  } catch (err) {
+    logger.warn({ driveId, err }, "Could not fetch drive members — continuing without access metadata");
+  }
 
   const folderCache = new Map<string, string>();
   const fields =
@@ -666,7 +743,6 @@ async function* syncIncrementalDrive(
           contentHash: null,
           sourceCreatedAt: null,
           sourceUpdatedAt: null,
-          accessibleBy: null,
         };
         totalChanges++;
         continue;
@@ -676,14 +752,9 @@ async function* syncIncrementalDrive(
 
       const fetched = await fetchFileContent(change.file, accessToken, logger);
       const sourcePath = await resolveFolderPath(change.file, driveName, accessToken, folderCache);
-      yield fileToSyncedItem(
-        change.file,
-        fetched?.content ?? null,
-        fetched?.hash ?? null,
-        sourcePath,
-        accessibleBy,
-        emailMap,
-      );
+      yield fileToSyncedItem(change.file, fetched?.content ?? null, fetched?.hash ?? null, sourcePath, {
+        scope: driveScope,
+      });
       totalChanges++;
     }
 
@@ -764,15 +835,10 @@ async function* syncSelectedFolders(
         }
         const fetched = await fetchFileContent(file, accessToken, logger);
         const sourcePath = await resolveFolderPath(file, "My Drive", accessToken, folderCache);
-        const { emails: accessibleBy, emailMap } = extractFilePermissions(file);
-        yield fileToSyncedItem(
-          file,
-          fetched?.content ?? null,
-          fetched?.hash ?? null,
-          sourcePath,
-          accessibleBy.length > 0 ? accessibleBy : null,
-          emailMap,
-        );
+        const permissionEmails = extractFilePermissionEmails(file);
+        yield fileToSyncedItem(file, fetched?.content ?? null, fetched?.hash ?? null, sourcePath, {
+          emails: permissionEmails.length > 0 ? permissionEmails : null,
+        });
         totalFiles++;
       }
 
@@ -810,15 +876,10 @@ async function* syncAllFiles(accessToken: string, logger: Logger): AsyncGenerato
       if (file.mimeType === FOLDER_MIME) continue;
       const fetched = await fetchFileContent(file, accessToken, logger);
       const sourcePath = await resolveFolderPath(file, "My Drive", accessToken, folderCache);
-      const { emails: accessibleBy, emailMap } = extractFilePermissions(file);
-      yield fileToSyncedItem(
-        file,
-        fetched?.content ?? null,
-        fetched?.hash ?? null,
-        sourcePath,
-        accessibleBy.length > 0 ? accessibleBy : null,
-        emailMap,
-      );
+      const permissionEmails = extractFilePermissionEmails(file);
+      yield fileToSyncedItem(file, fetched?.content ?? null, fetched?.hash ?? null, sourcePath, {
+        emails: permissionEmails.length > 0 ? permissionEmails : null,
+      });
       totalFiles++;
     }
 
@@ -869,7 +930,6 @@ async function* syncIncremental(
           contentHash: null,
           sourceCreatedAt: null,
           sourceUpdatedAt: null,
-          accessibleBy: null,
         };
         totalChanges++;
         continue;
@@ -879,15 +939,10 @@ async function* syncIncremental(
 
       const fetched = await fetchFileContent(change.file, accessToken, logger);
       const sourcePath = await resolveFolderPath(change.file, "My Drive", accessToken, folderCache);
-      const { emails: accessibleBy, emailMap } = extractFilePermissions(change.file);
-      yield fileToSyncedItem(
-        change.file,
-        fetched?.content ?? null,
-        fetched?.hash ?? null,
-        sourcePath,
-        accessibleBy.length > 0 ? accessibleBy : null,
-        emailMap,
-      );
+      const permissionEmails = extractFilePermissionEmails(change.file);
+      yield fileToSyncedItem(change.file, fetched?.content ?? null, fetched?.hash ?? null, sourcePath, {
+        emails: permissionEmails.length > 0 ? permissionEmails : null,
+      });
       totalChanges++;
     }
 

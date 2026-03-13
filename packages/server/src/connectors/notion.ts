@@ -388,7 +388,7 @@ async function* syncDatabases(token: string, since: string | null, logger: Logge
         contentHash: contentHash(`db-${dbId}-${lastEdited}`),
         sourceCreatedAt: (db.created_time as string) ?? null,
         sourceUpdatedAt: lastEdited ?? null,
-        accessibleBy: null, // Notion API doesn't expose per-page permissions
+        // Notion API doesn't expose per-page permissions — no access restrictions
       };
 
       yield* syncDatabasePages(dbId, title, token, since, logger);
@@ -456,7 +456,6 @@ async function* syncDatabasePages(
         contentHash: contentHash(`${pageId}-${lastEdited}`),
         sourceCreatedAt: (page.created_time as string) ?? null,
         sourceUpdatedAt: lastEdited ?? null,
-        accessibleBy: null,
       };
     }
 
@@ -517,7 +516,6 @@ async function* syncPages(token: string, since: string | null, logger: Logger): 
         contentHash: contentHash(content),
         sourceCreatedAt: (page.created_time as string) ?? null,
         sourceUpdatedAt: lastEdited ?? null,
-        accessibleBy: null,
       };
     }
 

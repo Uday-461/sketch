@@ -3,7 +3,11 @@
  * Reads auth fields and connect steps from the integration registry,
  * so adding a new integration requires zero dialog changes.
  *
- * Google Drive has a two-step flow: credentials → shared drive picker.
+ * Google Drive uses an OAuth redirect flow:
+ * 1. Admin configures client_id + client_secret (one-time)
+ * 2. "Connect with Google" redirects to Google's consent screen
+ * 3. Callback auto-creates connector and triggers sync
+ *
  * Other integrations connect immediately after credential validation.
  */
 import { ConnectorLogo } from "@/components/connector-logos";
@@ -22,9 +26,18 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import type { IntegrationDefinition } from "@/lib/integrations";
-import { ArrowLeftIcon, ArrowSquareOutIcon, FolderIcon, SpinnerGapIcon } from "@phosphor-icons/react";
-import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import {
+  ArrowLeftIcon,
+  ArrowSquareOutIcon,
+  CaretRightIcon,
+  FileIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  GoogleLogoIcon,
+  SpinnerGapIcon,
+} from "@phosphor-icons/react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 interface SharedDrive {
@@ -47,51 +60,66 @@ export function ConnectIntegrationDialog({
 }: ConnectIntegrationDialogProps) {
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
 
-  // Google Drive two-step state
-  const [step, setStep] = useState<"credentials" | "drives">("credentials");
+  // Google Drive OAuth state
+  const [step, setStep] = useState<"credentials" | "drives" | "oauth-config">("credentials");
   const [sharedDrives, setSharedDrives] = useState<SharedDrive[]>([]);
   const [selectedDriveIds, setSelectedDriveIds] = useState<Set<string>>(new Set());
   const [rootFolders, setRootFolders] = useState<SharedDrive[]>([]);
   const [selectedFolderIds, setSelectedFolderIds] = useState<Set<string>>(new Set());
 
-  const isGoogleDrive = integration?.type === "google_drive";
-  const isMyDriveMode = isGoogleDrive && sharedDrives.length === 0;
+  const isOAuthRedirect = integration?.oauthRedirect === true;
 
-  /** For non-Google-Drive: connect directly. For Google Drive: validate + browse drives/folders. */
+  // Check if Google OAuth is configured (for OAuth redirect integrations)
+  const oauthStatus = useQuery({
+    queryKey: ["google-oauth-status"],
+    queryFn: () => api.googleOAuth.status(),
+    enabled: open && isOAuthRedirect,
+  });
+
+  const isOAuthConfigured = oauthStatus.data?.configured === true;
+
+  // For OAuth redirect: start with oauth-config step if not configured
+  useEffect(() => {
+    if (open && isOAuthRedirect) {
+      if (oauthStatus.isSuccess) {
+        setStep(isOAuthConfigured ? "credentials" : "oauth-config");
+      }
+    }
+  }, [open, isOAuthRedirect, oauthStatus.isSuccess, isOAuthConfigured]);
+
+  /** Save Google OAuth client_id + client_secret. */
+  const configureOAuthMutation = useMutation({
+    mutationFn: async () => {
+      const clientId = fieldValues.client_id?.trim();
+      const clientSecret = fieldValues.client_secret?.trim();
+      if (!clientId || !clientSecret) throw new Error("Client ID and Secret are required");
+      await api.googleOAuth.configure(clientId, clientSecret);
+    },
+    onSuccess: () => {
+      toast.success("Google OAuth configured.");
+      oauthStatus.refetch();
+      setStep("credentials");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to configure Google OAuth.");
+    },
+  });
+
+  /** For non-OAuth-redirect integrations: connect directly. */
   const validateMutation = useMutation({
     mutationFn: async () => {
       if (!integration) throw new Error("No integration selected");
       const credentials = buildCredentials();
-
-      if (isGoogleDrive) {
-        const result = await api.integrations.browseGoogleDrive(
-          credentials as { client_id: string; client_secret: string; refresh_token: string },
-        );
-        return { drives: result.sharedDrives, folders: result.rootFolders };
-      }
-
-      // Non-Google-Drive: connect immediately
       await api.integrations.connect({
         connectorType: integration.type,
         authType: integration.authType,
         credentials,
       });
-      return { drives: null, folders: null };
     },
-    onSuccess: (data) => {
-      if (data.drives !== null) {
-        // Google Drive: move to scope picker
-        setSharedDrives(data.drives);
-        setSelectedDriveIds(new Set(data.drives.map((d) => d.id)));
-        setRootFolders(data.folders ?? []);
-        setSelectedFolderIds(new Set((data.folders ?? []).map((f) => f.id)));
-        setStep("drives");
-      } else {
-        // Non-Google-Drive: done
-        toast.success(`${integration?.name} connected successfully.`);
-        resetAndClose();
-        onConnected();
-      }
+    onSuccess: () => {
+      toast.success(`${integration?.name} connected successfully.`);
+      resetAndClose();
+      onConnected();
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to connect. Check your credentials and try again.");
@@ -164,10 +192,18 @@ export function ConnectIntegrationDialog({
     });
   };
 
+  const handleConnectWithGoogle = () => {
+    const url = api.googleOAuth.authorizeUrl();
+    window.open(url, "_self");
+  };
+
   const allFieldsFilled = integration?.authFields.every((f) => (fieldValues[f.key] ?? "").trim().length > 0) ?? false;
-  const isPending = validateMutation.isPending || connectWithDrivesMutation.isPending;
+  const isPending =
+    validateMutation.isPending || connectWithDrivesMutation.isPending || configureOAuthMutation.isPending;
 
   if (!integration) return null;
+
+  const isMyDriveMode = sharedDrives.length === 0;
 
   return (
     <Dialog
@@ -178,7 +214,116 @@ export function ConnectIntegrationDialog({
       }}
     >
       <DialogContent>
-        {step === "credentials" ? (
+        {step === "oauth-config" ? (
+          /* OAuth redirect: admin configures client_id + client_secret (one-time) */
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2.5">
+                <IntegrationIcon color={integration.color} name={integration.name} type={integration.type} />
+                Configure {integration.name}
+              </DialogTitle>
+              <DialogDescription>
+                One-time setup: enter your Google OAuth credentials. After this, users can connect with one click.
+              </DialogDescription>
+            </DialogHeader>
+
+            <ol className="list-inside list-decimal space-y-1.5 text-xs text-muted-foreground">
+              {integration.connectSteps.map((s) => (
+                <li key={s}>{s}</li>
+              ))}
+            </ol>
+
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" asChild>
+                <a href={integration.credentialUrl} target="_blank" rel="noopener noreferrer">
+                  Google Cloud Console
+                  <ArrowSquareOutIcon className="size-3.5" />
+                </a>
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              {integration.authFields.map((field) => (
+                <div key={field.key} className="space-y-1.5">
+                  <Label htmlFor={`auth-${field.key}`} className="text-xs">
+                    {field.label}
+                  </Label>
+                  <Input
+                    id={`auth-${field.key}`}
+                    type={field.type === "password" ? "password" : "text"}
+                    value={fieldValues[field.key] ?? ""}
+                    onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                    placeholder={field.placeholder}
+                    disabled={isPending}
+                    className="font-mono text-xs"
+                  />
+                  {field.helpText && <p className="text-[11px] text-muted-foreground">{field.helpText}</p>}
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+              <p className="text-[11px] text-muted-foreground">
+                <strong>Redirect URI</strong> — add this to your Google OAuth client's authorized redirect URIs:
+              </p>
+              <code className="mt-1 block text-[11px] text-foreground">
+                {oauthStatus.data?.baseUrl || window.location.origin}/api/oauth/google/callback
+              </code>
+            </div>
+
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline" disabled={isPending}>
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button onClick={() => configureOAuthMutation.mutate()} disabled={!allFieldsFilled || isPending}>
+                {isPending ? (
+                  <>
+                    <SpinnerGapIcon size={14} className="animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save & Continue"
+                )}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : step === "credentials" && isOAuthRedirect ? (
+          /* OAuth redirect: "Connect with Google" button */
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2.5">
+                <IntegrationIcon color={integration.color} name={integration.name} type={integration.type} />
+                Connect {integration.name}
+              </DialogTitle>
+              <DialogDescription>
+                Sign in with your Google account to connect your Drive. Files will be synced automatically.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex flex-col items-center gap-4 py-4">
+              <Button size="lg" className="w-full gap-2" onClick={handleConnectWithGoogle}>
+                <GoogleLogoIcon size={18} weight="bold" />
+                Connect with Google
+              </Button>
+
+              <p className="text-center text-[11px] text-muted-foreground">
+                You'll be redirected to Google to authorize read-only access to your Drive.
+              </p>
+            </div>
+
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+              <Button variant="ghost" size="sm" onClick={() => setStep("oauth-config")}>
+                Reconfigure OAuth
+              </Button>
+            </DialogFooter>
+          </>
+        ) : step === "credentials" ? (
+          /* Non-OAuth-redirect: manual credential entry */
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2.5">
@@ -244,10 +389,8 @@ export function ConnectIntegrationDialog({
                 {isPending ? (
                   <>
                     <SpinnerGapIcon size={14} className="animate-spin" />
-                    {isGoogleDrive ? "Validating..." : "Connecting..."}
+                    Connecting...
                   </>
-                ) : isGoogleDrive ? (
-                  "Validate & Select Drives"
                 ) : (
                   "Connect"
                 )}
@@ -411,18 +554,70 @@ export function SharedDrivePicker({
   );
 }
 
+/** Expandable row showing a folder's children (files and subfolders). */
+function FolderContents({
+  connectorId,
+  folderId,
+}: {
+  connectorId: string;
+  folderId: string;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["folder-contents", connectorId, folderId],
+    queryFn: () => api.integrations.browseFolderContents(connectorId, folderId),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 py-1.5 pl-12 text-xs text-muted-foreground">
+        <SpinnerGapIcon size={12} className="animate-spin" />
+        Loading…
+      </div>
+    );
+  }
+
+  const items = data?.items ?? [];
+  if (items.length === 0) {
+    return <p className="py-1.5 pl-12 text-xs text-muted-foreground">Empty folder</p>;
+  }
+
+  return (
+    <div className="border-l border-border/50 ml-5">
+      {items.map((item) => (
+        <div key={item.id} className="flex items-center gap-2 py-1 pl-4 pr-3 text-xs text-muted-foreground">
+          {item.isFolder ? <FolderIcon size={14} className="shrink-0" /> : <FileIcon size={14} className="shrink-0" />}
+          <span className="truncate">{item.name}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Folder picker for My Drive mode — selects root-level folders to sync. */
 export function FolderPicker({
   folders,
   selectedIds,
   onToggle,
   disabled,
+  connectorId,
 }: {
   folders: Array<{ id: string; name: string }>;
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
   disabled?: boolean;
+  connectorId?: string;
 }) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   if (folders.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-muted/20 px-4 py-6 text-center">
@@ -456,44 +651,67 @@ export function FolderPicker({
         {allSelected ? "Deselect all" : "Select all"} ({folders.length})
       </button>
 
-      <div className="max-h-64 space-y-0.5 overflow-y-auto rounded-lg border border-border">
+      <div className="max-h-80 space-y-0.5 overflow-y-auto rounded-lg border border-border">
         {folders.map((folder) => {
           const isSelected = selectedIds.has(folder.id);
+          const isExpanded = expandedIds.has(folder.id);
           return (
-            <button
-              key={folder.id}
-              type="button"
-              onClick={() => onToggle(folder.id)}
-              disabled={disabled}
-              className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50 disabled:opacity-50 ${
-                isSelected ? "bg-muted/30" : ""
-              }`}
-            >
-              <span
-                className={`inline-flex size-4 shrink-0 items-center justify-center rounded border ${
-                  isSelected ? "border-primary bg-primary" : "border-border"
+            <div key={folder.id}>
+              <div
+                className={`flex w-full items-center gap-1 px-1 py-2 text-left text-sm transition-colors hover:bg-muted/50 ${
+                  isSelected ? "bg-muted/30" : ""
                 }`}
               >
-                {isSelected && (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={3}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="size-3 text-primary-foreground"
-                    role="img"
-                    aria-label="Selected"
+                {connectorId ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(folder.id)}
+                    className="flex shrink-0 items-center justify-center size-6 rounded hover:bg-muted/80 text-muted-foreground"
+                    title="Preview folder contents"
                   >
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
+                    <CaretRightIcon size={12} className={`transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                  </button>
+                ) : (
+                  <span className="size-6 shrink-0" />
                 )}
-              </span>
-              <FolderIcon size={16} className="shrink-0 text-muted-foreground" />
-              <span className="truncate">{folder.name}</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => onToggle(folder.id)}
+                  disabled={disabled}
+                  className="flex flex-1 items-center gap-2.5 disabled:opacity-50"
+                >
+                  <span
+                    className={`inline-flex size-4 shrink-0 items-center justify-center rounded border ${
+                      isSelected ? "border-primary bg-primary" : "border-border"
+                    }`}
+                  >
+                    {isSelected && (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="size-3 text-primary-foreground"
+                        role="img"
+                        aria-label="Selected"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </span>
+                  {isExpanded ? (
+                    <FolderOpenIcon size={16} className="shrink-0 text-muted-foreground" />
+                  ) : (
+                    <FolderIcon size={16} className="shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="truncate">{folder.name}</span>
+                </button>
+              </div>
+              {isExpanded && connectorId && <FolderContents connectorId={connectorId} folderId={folder.id} />}
+            </div>
           );
         })}
       </div>

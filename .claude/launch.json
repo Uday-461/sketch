@@ -7,5 +7,6 @@
       "runtimeArgs": ["--filter", "web", "dev"],
       "port": 5173
     }
-  ]
+  ],
+  "autoVerify": false
 }
