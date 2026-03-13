@@ -14,8 +14,11 @@ import { Hono } from "hono";
 import type { Kysely } from "kysely";
 import type { Logger } from "pino";
 import { z } from "zod";
-import { ensureValidToken, listMyDriveFolders, listSharedDrives } from "../connectors/google-drive";
-import { getFileContent, listIndexedSources, searchFiles } from "../connectors/search";
+import { createEmbeddingProvider, createQueryEmbedder } from "../connectors/embeddings";
+import { runEnrichment } from "../connectors/enrichment";
+import { ensureValidToken, listFolderContents, listMyDriveFolders, listSharedDrives } from "../connectors/google-drive";
+import { createLlmCallFn } from "../connectors/llm";
+import { browseFiles, getFileContent, hybridSearch, listIndexedSources, searchFiles } from "../connectors/search";
 import { getConnector, runConnectorSync } from "../connectors/sync";
 import type { ConnectorCredentials, OAuthCredentials } from "../connectors/types";
 import type { createConnectorRepository } from "../db/repositories/connectors";
@@ -31,7 +34,6 @@ const createConnectorSchema = z.object({
   authType: z.enum(VALID_AUTH_TYPES),
   credentials: z.record(z.string(), z.unknown()),
   scopeConfig: z.record(z.string(), z.unknown()).optional(),
-  teamAccess: z.array(z.string()).optional(),
 });
 
 const searchSchema = z.object({
@@ -75,7 +77,6 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
           connectorType: cfg.connector_type,
           authType: cfg.auth_type,
           scopeConfig: JSON.parse(cfg.scope_config),
-          teamAccess: cfg.team_access ? JSON.parse(cfg.team_access) : null,
           syncStatus: cfg.sync_status,
           lastSyncedAt: cfg.last_synced_at,
           errorMessage: cfg.error_message,
@@ -122,7 +123,6 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
       authType: parsed.data.authType,
       credentials: JSON.stringify(credentials),
       scopeConfig: parsed.data.scopeConfig ? JSON.stringify(parsed.data.scopeConfig) : undefined,
-      teamAccess: parsed.data.teamAccess ? JSON.stringify(parsed.data.teamAccess) : undefined,
       createdBy: "admin",
     });
 
@@ -155,15 +155,16 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
     ]);
 
     const fileIds = files.map((f) => f.id);
-    const accessMap = fileIds.length > 0 ? await connectorRepo.getFileAccessMap(fileIds) : new Map<string, string[]>();
+    const accessMap =
+      fileIds.length > 0
+        ? await connectorRepo.getFileAccessMap(fileIds)
+        : new Map<string, { type: string; count: number }>();
 
     return c.json({
       files: files.map((f) => {
-        const accessList = accessMap.get(f.id);
+        const accessInfo = accessMap.get(f.id);
         return {
           id: f.id,
-          connectorId: f.connector_config_id,
-          connectorType: f.connector_type,
           fileName: f.file_name,
           fileType: f.file_type,
           contentCategory: f.content_category,
@@ -173,8 +174,8 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
           syncedAt: f.synced_at,
           sourceUpdatedAt: f.source_updated_at,
           hasSummary: !!f.summary,
-          accessScope: accessList ? "restricted" : "unrestricted",
-          accessCount: accessList?.length ?? null,
+          accessScope: accessInfo ? "restricted" : "unrestricted",
+          accessCount: accessInfo?.count ?? null,
         };
       }),
       total,
@@ -182,12 +183,14 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
     });
   });
 
-  /** Search indexed files (FTS5). */
+  /** Hybrid search: FTS5 keyword + vector semantic search with RRF merging. */
   routes.get("/search", async (c) => {
     const query = c.req.query("query") ?? "";
     const source = c.req.query("source");
     const category = c.req.query("category");
     const limit = c.req.query("limit");
+    const after = c.req.query("after");
+    const before = c.req.query("before");
 
     const parsed = searchSchema.safeParse({ query, source, category, limit });
     if (!parsed.success) {
@@ -195,10 +198,29 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
       return c.json({ error: { code: "VALIDATION_ERROR", message } }, 400);
     }
 
-    const results = await searchFiles(db, parsed.data.query, {
+    // Try to embed the query for vector search (if Gemini key is configured)
+    let queryEmbedding: number[] | undefined;
+    try {
+      const settings = await db
+        .selectFrom("settings")
+        .select("gemini_api_key")
+        .where("id", "=", "default")
+        .executeTakeFirst();
+      if (settings?.gemini_api_key) {
+        const embedQuery = createQueryEmbedder({ provider: "gemini", apiKey: settings.gemini_api_key });
+        queryEmbedding = await embedQuery(parsed.data.query);
+      }
+    } catch (err) {
+      // Vector search is best-effort — fall back to FTS5 only
+      logger.warn({ err }, "Failed to embed search query, falling back to FTS5");
+    }
+
+    const results = await hybridSearch(db, parsed.data.query, {
       source: parsed.data.source,
       category: parsed.data.category,
       limit: parsed.data.limit,
+      queryEmbedding,
+      timeFilter: after || before ? { after: after ?? undefined, before: before ?? undefined } : undefined,
     });
     return c.json({ results });
   });
@@ -217,10 +239,10 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
       access: {
         scope: accessDetails.length > 0 ? "restricted" : "unrestricted",
         members: accessDetails.map((a) => ({
-          providerUserId: a.providerUserId,
-          providerEmail: a.providerEmail,
+          email: a.email,
           userName: a.userName,
           userId: a.userId,
+          source: a.source,
           mapped: !!a.userId,
         })),
       },
@@ -293,8 +315,8 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
       const selectedDriveIds = (currentScope.sharedDrives as string[] | undefined) ?? [];
       const selectedFolderIds = (currentScope.folders as string[] | undefined) ?? [];
 
-      // Also fetch root folders for My Drive mode
-      const rootFolders = sharedDrives.length === 0 ? await listMyDriveFolders(validCreds.access_token) : [];
+      // Always fetch root folders so users can pick shared drives, My Drive folders, or both
+      const rootFolders = await listMyDriveFolders(validCreds.access_token);
 
       return c.json({
         sharedDrives: sharedDrives.map((d) => ({
@@ -309,6 +331,37 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to browse Google Drive";
       logger.warn({ err, connectorId: config.id }, "Google Drive browse failed for existing connector");
+      return c.json({ error: { code: "BROWSE_FAILED", message } }, 400);
+    }
+  });
+
+  /**
+   * Browse contents of a specific folder within a connector's Drive.
+   * Returns immediate children (files and subfolders) for the folder picker preview.
+   */
+  routes.get("/google-drive/browse/:connectorId/folder/:folderId", async (c) => {
+    const config = await connectorRepo.findConfigById(c.req.param("connectorId"));
+    if (!config) {
+      return c.json({ error: { code: "NOT_FOUND", message: "Connector not found" } }, 404);
+    }
+
+    if (config.connector_type !== "google_drive") {
+      return c.json({ error: { code: "INVALID_TYPE", message: "Connector is not Google Drive" } }, 400);
+    }
+
+    try {
+      const credentials = JSON.parse(config.credentials) as OAuthCredentials;
+      const validCreds = await ensureValidToken(credentials);
+
+      if (validCreds.access_token !== credentials.access_token) {
+        await connectorRepo.updateConfig(config.id, { credentials: JSON.stringify(validCreds) });
+      }
+
+      const items = await listFolderContents(validCreds.access_token, c.req.param("folderId"));
+      return c.json({ items });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to browse folder";
+      logger.warn({ err, connectorId: config.id }, "Google Drive folder browse failed");
       return c.json({ error: { code: "BROWSE_FAILED", message } }, 400);
     }
   });
@@ -329,7 +382,6 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
         connectorType: config.connector_type,
         authType: config.auth_type,
         scopeConfig: JSON.parse(config.scope_config),
-        teamAccess: config.team_access ? JSON.parse(config.team_access) : null,
         syncStatus: config.sync_status,
         lastSyncedAt: config.last_synced_at,
         errorMessage: config.error_message,
@@ -403,9 +455,27 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
       logger.warn({ connectorId: config.id }, "Reset stale syncing status via manual trigger");
     }
 
-    runConnectorSync(db, config.id, logger).catch((err) => {
-      logger.error({ err, connectorId: config.id }, "Background sync failed");
-    });
+    // Run sync then enrichment in background
+    runConnectorSync(db, config.id, logger)
+      .then(async () => {
+        const settings = await db
+          .selectFrom("settings")
+          .select("gemini_api_key")
+          .where("id", "=", "default")
+          .executeTakeFirst();
+        const embeddingProvider = settings?.gemini_api_key
+          ? createEmbeddingProvider({ provider: "gemini", apiKey: settings.gemini_api_key })
+          : null;
+        return runEnrichment({
+          db,
+          logger: logger.child({ component: "enrichment" }),
+          embeddingProvider,
+          llmCall: createLlmCallFn(),
+        });
+      })
+      .catch((err) => {
+        logger.error({ err, connectorId: config.id }, "Background sync/enrichment failed");
+      });
 
     return c.json({ message: "Sync started", connectorId: config.id });
   });
@@ -423,7 +493,7 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
 
     return c.json({
       files: files.map((f) => {
-        const accessList = accessMap.get(f.id);
+        const accessInfo = accessMap.get(f.id);
         return {
           id: f.id,
           fileName: f.file_name,
@@ -435,8 +505,8 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
           syncedAt: f.synced_at,
           sourceUpdatedAt: f.source_updated_at,
           hasSummary: !!f.summary,
-          accessScope: accessList ? "restricted" : "unrestricted",
-          accessCount: accessList?.length ?? null,
+          accessScope: accessInfo ? "restricted" : "unrestricted",
+          accessCount: accessInfo?.count ?? null,
         };
       }),
     });

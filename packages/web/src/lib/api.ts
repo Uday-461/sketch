@@ -59,7 +59,7 @@ export interface ConnectorConfig {
   connectorType: string;
   authType: string;
   scopeConfig: Record<string, unknown>;
-  teamAccess: string[] | null;
+
   syncStatus: "active" | "syncing" | "error" | "paused" | "pending";
   lastSyncedAt: string | null;
   errorMessage: string | null;
@@ -98,17 +98,30 @@ export interface FileContent {
 }
 
 export interface FileAccessMember {
-  providerUserId: string;
-  providerEmail: string | null;
+  email: string;
   userName: string | null;
   userId: string | null;
+  source: "scope" | "file";
   mapped: boolean;
 }
 
-/** A file with its parent connector metadata — returned by the paginated all-files endpoint. */
-export interface UnifiedFile extends ConnectorFile {
-  connectorId: string;
-  connectorType: string;
+/** A file returned by the paginated all-files endpoint. */
+export type UnifiedFile = ConnectorFile;
+
+/** A result from hybrid search (FTS5 + vector). */
+export interface SearchResult {
+  id: string;
+  fileName: string;
+  source: string;
+  contentCategory: string;
+  summary: string | null;
+  providerUrl: string | null;
+  sourcePath: string | null;
+  sourceUpdatedAt: string | null;
+  tags: string | null;
+  snippet: string | null;
+  similarity: number | null;
+  score: number;
 }
 
 export interface FileAccess {
@@ -292,6 +305,14 @@ export const api = {
         `/api/connectors/all-files${qs ? `?${qs}` : ""}`,
       );
     },
+    search(opts: { query: string; source?: string; category?: string; limit?: number }) {
+      const params = new URLSearchParams();
+      params.set("query", opts.query);
+      if (opts.source) params.set("source", opts.source);
+      if (opts.category) params.set("category", opts.category);
+      if (opts.limit) params.set("limit", String(opts.limit));
+      return request<{ results: SearchResult[] }>(`/api/connectors/search?${params.toString()}`);
+    },
     fileContent(fileId: string) {
       return request<{ file: FileContent; access: FileAccess }>(`/api/connectors/files/${fileId}/content`);
     },
@@ -316,6 +337,11 @@ export const api = {
         rootFolders: Array<{ id: string; name: string; selected: boolean }>;
       }>(`/api/connectors/google-drive/browse/${connectorId}`);
     },
+    browseFolderContents(connectorId: string, folderId: string) {
+      return request<{
+        items: Array<{ id: string; name: string; mimeType: string; isFolder: boolean }>;
+      }>(`/api/connectors/google-drive/browse/${connectorId}/folder/${folderId}`);
+    },
     updateScope(id: string, scopeConfig: Record<string, unknown>) {
       return request<{
         connector: { id: string; connectorType: string; scopeConfig: Record<string, unknown>; syncStatus: string };
@@ -323,6 +349,22 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify({ scopeConfig }),
       });
+    },
+  },
+  googleOAuth: {
+    status() {
+      return request<{ configured: boolean; clientId: string | null; baseUrl: string | null }>(
+        "/api/oauth/google/status",
+      );
+    },
+    configure(clientId: string, clientSecret: string) {
+      return request<{ success: boolean }>("/api/oauth/google/configure", {
+        method: "POST",
+        body: JSON.stringify({ clientId, clientSecret }),
+      });
+    },
+    authorizeUrl() {
+      return "/api/oauth/google/authorize";
     },
   },
   identities: {

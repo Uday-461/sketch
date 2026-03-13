@@ -16,6 +16,11 @@ import * as m009 from "./migrations/009-teams";
 import * as m010 from "./migrations/010-user-provider-identities";
 import * as m011 from "./migrations/011-file-access-email";
 import * as m012 from "./migrations/012-settings-smtp";
+import * as m013 from "./migrations/013-remove-teams";
+import * as m014 from "./migrations/014-google-oauth-settings";
+import * as m015 from "./migrations/015-file-access-redesign";
+import * as m016 from "./migrations/016-semantic-search";
+import * as m017 from "./migrations/017-fts-add-source-path";
 import type { DB } from "./schema";
 
 export async function runMigrations(db: Kysely<DB>): Promise<void> {
@@ -36,6 +41,11 @@ export async function runMigrations(db: Kysely<DB>): Promise<void> {
           "010-user-provider-identities": m010,
           "011-file-access-email": m011,
           "012-settings-smtp": m012,
+          "013-remove-teams": m013,
+          "014-google-oauth-settings": m014,
+          "015-file-access-redesign": m015,
+          "016-semantic-search": m016,
+          "017-fts-add-source-path": m017,
         };
       },
     },

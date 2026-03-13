@@ -40,7 +40,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { ConnectorConfig, ConnectorFile, FileAccess, FileContent, UnifiedFile } from "@/lib/api";
+import type { ConnectorConfig, ConnectorFile, FileAccess, FileContent, SearchResult, UnifiedFile } from "@/lib/api";
 import { api } from "@/lib/api";
 import { INTEGRATIONS, type IntegrationDefinition, type IntegrationType, getIntegration } from "@/lib/integrations";
 import {
@@ -68,7 +68,7 @@ import {
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { dashboardRoute } from "./dashboard";
 
@@ -102,6 +102,19 @@ function FilesPage() {
     connector: ConnectorConfig;
   } | null>(null);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  // Debounce search input — wait 400ms after typing stops before querying server
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 400);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [search]);
 
   /* ── Data fetching ─────────────────────────────────────── */
 
@@ -112,6 +125,42 @@ function FilesPage() {
   });
 
   const connectors = connectorsData?.connectors ?? [];
+
+  /** Auto-open manage dialog after OAuth redirect (e.g. ?oauth=success&connectorId=...) */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthStatus = params.get("oauth");
+    const connectorId = params.get("connectorId");
+
+    if (!oauthStatus || connectors.length === 0) return;
+
+    // Clear query params to avoid re-triggering
+    window.history.replaceState({}, "", window.location.pathname);
+
+    if (oauthStatus === "success" && connectorId) {
+      const connector = connectors.find((c) => c.id === connectorId);
+      if (connector) {
+        const def = getIntegration(connector.connectorType as IntegrationType);
+        if (def) {
+          toast.success("Google account connected — now select which drives or folders to sync.");
+          setManagingConnector({ definition: def, connector });
+          return;
+        }
+      }
+      toast.success("Google Drive connected successfully.");
+    } else if (oauthStatus === "error") {
+      const reason = params.get("reason") ?? "unknown";
+      const messages: Record<string, string> = {
+        denied: "Google authorization was denied.",
+        no_refresh_token:
+          "No refresh token received — try revoking app access in Google Account settings and reconnecting.",
+        token_exchange: "Failed to exchange authorization code for tokens.",
+        not_configured: "Google OAuth is not configured.",
+        internal: "An internal error occurred during authorization.",
+      };
+      toast.error(messages[reason] ?? `OAuth error: ${reason}`);
+    }
+  }, [connectors]);
 
   /** Server-side source filter: connector type or undefined for all. "local" is handled client-side. */
   const serverSource = sourceFilter && sourceFilter !== "local" ? sourceFilter : undefined;
@@ -132,6 +181,17 @@ function FilesPage() {
   const totalFiles = filesData?.total ?? 0;
   const hasMore = filesData?.hasMore ?? false;
 
+  /** Server-side hybrid search (FTS5 + vector). Only fires when debouncedSearch is non-empty. */
+  const { data: searchData, isFetching: isSearching } = useQuery({
+    queryKey: ["hybrid-search", debouncedSearch, serverSource],
+    queryFn: () => api.integrations.search({ query: debouncedSearch, source: serverSource, limit: 20 }),
+    enabled: debouncedSearch.length > 0,
+    staleTime: 30000,
+  });
+
+  const searchResults: SearchResult[] = searchData?.results ?? [];
+  const isInSearchMode = debouncedSearch.length > 0;
+
   const loadMore = useCallback(() => {
     setPageSize((prev) => prev + PAGE_SIZE);
   }, []);
@@ -139,17 +199,10 @@ function FilesPage() {
   /* ── Filter logic ──────────────────────────────────────── */
 
   const filteredFiles = useMemo(() => {
-    let result = allFiles;
+    // When searching, server already returns ranked results — skip client-side filtering
+    if (isInSearchMode) return allFiles;
 
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (f) =>
-          f.fileName.toLowerCase().includes(q) ||
-          f.sourcePath?.toLowerCase().includes(q) ||
-          f.fileType?.toLowerCase().includes(q),
-      );
-    }
+    let result = allFiles;
 
     // "local" source filter is client-side only (connector source filters are server-side)
     if (sourceFilter === "local") {
@@ -168,7 +221,7 @@ function FilesPage() {
     }
 
     return result;
-  }, [allFiles, search, sourceFilter, typeFilter, statusFilter, accessFilter]);
+  }, [allFiles, isInSearchMode, sourceFilter, typeFilter, statusFilter, accessFilter]);
 
   /* ── Derived stats ─────────────────────────────────────── */
 
@@ -208,11 +261,16 @@ function FilesPage() {
     }
   };
 
-  const selectedConnectorId = useMemo(() => {
+  const selectedSource = useMemo(() => {
     if (selectedIds.size === 0) return null;
     const firstSelected = allFiles.find((f) => selectedIds.has(f.id));
-    return firstSelected?.connectorId ?? null;
+    return firstSelected?.source ?? null;
   }, [selectedIds, allFiles]);
+
+  const selectedConnectorId = useMemo(() => {
+    if (!selectedSource) return null;
+    return connectors.find((c) => c.connectorType === selectedSource)?.id ?? null;
+  }, [selectedSource, connectors]);
 
   const handleConnected = () => {
     queryClient.invalidateQueries({ queryKey: ["integrations"] });
@@ -367,12 +425,37 @@ function FilesPage() {
 
       {/* File List */}
       <div className="mt-4">
-        {isLoading ? (
+        {isLoading || isSearching ? (
           <div className="space-y-2">
             {["fskel-1", "fskel-2", "fskel-3", "fskel-4", "fskel-5"].map((key) => (
               <Skeleton key={key} className="h-12 rounded-lg" />
             ))}
           </div>
+        ) : isInSearchMode ? (
+          /* ── Search results view ──────────────────────────── */
+          searchResults.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-center">
+              <MagnifyingGlassIcon size={32} className="text-muted-foreground" />
+              <p className="mt-3 text-sm font-medium">No results for "{debouncedSearch}"</p>
+              <p className="mt-1 text-xs text-muted-foreground">Try a different search term</p>
+            </div>
+          ) : (
+            <>
+              <div className="mb-2 text-xs text-muted-foreground">
+                {searchResults.length} result{searchResults.length === 1 ? "" : "s"} for "{debouncedSearch}"
+              </div>
+              <div className="flex items-center gap-3 border-b border-border px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                <span className="flex-1">Name</span>
+                <span className="w-24 text-center">Source</span>
+                <span className="w-16 text-center">Type</span>
+                <span className="w-20 text-center">Score</span>
+                <span className="w-20 text-center">Similarity</span>
+              </div>
+              {searchResults.map((result) => (
+                <SearchResultRow key={result.id} result={result} onView={() => setViewingFile(result.id)} />
+              ))}
+            </>
+          )
         ) : filteredFiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-center">
             <FileTextIcon size={32} className="text-muted-foreground" />
@@ -473,9 +556,7 @@ function FilesPage() {
           fileIds={Array.from(selectedIds)}
           fileCount={selectedIds.size}
           integrationName={
-            getIntegration(
-              allFiles.find((f) => f.connectorId === selectedConnectorId)?.connectorType as IntegrationType,
-            )?.name ?? "Source"
+            selectedSource ? (getIntegration(selectedSource as IntegrationType)?.name ?? "Source") : "Source"
           }
           open={showEnrichDialog}
           onOpenChange={setShowEnrichDialog}
@@ -915,7 +996,6 @@ function GoogleDriveScopeEditor({
   const queryClient = useQueryClient();
   const currentDriveIds = (scopeConfig?.sharedDrives as string[] | undefined) ?? [];
   const currentFolderIds = (scopeConfig?.folders as string[] | undefined) ?? [];
-  const isSharedDriveMode = currentDriveIds.length > 0;
 
   /** Fetch available drives/folders from the existing connector's credentials. */
   const { data: browseData, isLoading: isBrowsing } = useQuery({
@@ -965,13 +1045,13 @@ function GoogleDriveScopeEditor({
     (effectiveFolderIds.size !== currentFolderSet.size ||
       [...effectiveFolderIds].some((id) => !currentFolderSet.has(id)));
 
-  const hasChanges = isSharedDriveMode ? hasDriveChanges : hasFolderChanges;
+  const hasChanges = hasDriveChanges || hasFolderChanges;
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const newScope = isSharedDriveMode
-        ? { sharedDrives: Array.from(effectiveDriveIds) }
-        : { folders: Array.from(effectiveFolderIds) };
+      const newScope: Record<string, string[]> = {};
+      if (drives.length > 0) newScope.sharedDrives = Array.from(effectiveDriveIds);
+      if (folders.length > 0) newScope.folders = Array.from(effectiveFolderIds);
       return api.integrations.updateScope(connectorId, newScope);
     },
     onSuccess: () => {
@@ -984,65 +1064,62 @@ function GoogleDriveScopeEditor({
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const selectionCount = isSharedDriveMode ? effectiveDriveIds.size : effectiveFolderIds.size;
-  const itemLabel = isSharedDriveMode ? "drive" : "folder";
+  const totalSelected = effectiveDriveIds.size + effectiveFolderIds.size;
 
   return (
-    <div>
-      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-        {isSharedDriveMode ? "Synced shared drives" : "Synced folders"}
-      </p>
-      <div className="mt-1.5">
-        {isBrowsing ? (
-          <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
-            <SpinnerGapIcon size={14} className="animate-spin" />
-            Loading...
-          </div>
-        ) : isSharedDriveMode ? (
-          <>
-            <SharedDrivePicker
-              drives={drives}
-              selectedIds={effectiveDriveIds}
-              onToggle={toggleDrive}
-              disabled={saveMutation.isPending}
+    <div className="space-y-4">
+      {isBrowsing ? (
+        <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
+          <SpinnerGapIcon size={14} className="animate-spin" />
+          Loading...
+        </div>
+      ) : (
+        <>
+          {drives.length > 0 && (
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Shared drives</p>
+              <div className="mt-1.5">
+                <SharedDrivePicker
+                  drives={drives}
+                  selectedIds={effectiveDriveIds}
+                  onToggle={toggleDrive}
+                  disabled={saveMutation.isPending}
+                />
+              </div>
+            </div>
+          )}
+          {folders.length > 0 && (
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">My Drive folders</p>
+              <div className="mt-1.5">
+                <FolderPicker
+                  folders={folders}
+                  selectedIds={effectiveFolderIds}
+                  onToggle={toggleFolder}
+                  disabled={saveMutation.isPending}
+                  connectorId={connectorId}
+                />
+              </div>
+            </div>
+          )}
+          {drives.length === 0 && folders.length === 0 && (
+            <div className="rounded-lg border border-border bg-muted/20 px-3 py-3">
+              <p className="text-xs font-medium">No drives or folders found</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Check that the connected Google account has access to Drive content.
+              </p>
+            </div>
+          )}
+          {hasChanges && (
+            <SaveScopeButton
+              onClick={() => saveMutation.mutate()}
+              isPending={saveMutation.isPending}
+              count={totalSelected}
+              label="item"
             />
-            {hasChanges && (
-              <SaveScopeButton
-                onClick={() => saveMutation.mutate()}
-                isPending={saveMutation.isPending}
-                count={selectionCount}
-                label={itemLabel}
-              />
-            )}
-          </>
-        ) : folders.length > 0 ? (
-          <>
-            <FolderPicker
-              folders={folders}
-              selectedIds={effectiveFolderIds}
-              onToggle={toggleFolder}
-              disabled={saveMutation.isPending}
-            />
-            {hasChanges && (
-              <SaveScopeButton
-                onClick={() => saveMutation.mutate()}
-                isPending={saveMutation.isPending}
-                count={selectionCount}
-                label={itemLabel}
-              />
-            )}
-          </>
-        ) : (
-          <div className="rounded-lg border border-border bg-muted/20 px-3 py-3">
-            <p className="text-xs font-medium">
-              {currentFolderIds.length > 0
-                ? `${currentFolderIds.length} folder${currentFolderIds.length === 1 ? "" : "s"} selected`
-                : "All accessible files"}
-            </p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Syncing files from your Google Drive.</p>
-          </div>
-        )}
-      </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -1114,6 +1191,80 @@ function FilterDropdown({
  * Unified file row
  * ───────────────────────────────────────────────────────── */
 
+function SearchResultRow({ result, onView }: { result: SearchResult; onView: () => void }) {
+  const def = getIntegration(result.source as IntegrationType);
+  const Icon =
+    result.contentCategory === "document"
+      ? FileTextIcon
+      : result.contentCategory === "image"
+        ? FileTextIcon
+        : TableIcon;
+
+  return (
+    <div
+      className="flex items-center gap-3 border-b border-border px-3 py-2.5 text-sm transition-colors hover:bg-muted/30 cursor-pointer"
+      onClick={onView}
+      onKeyDown={(e) => e.key === "Enter" && onView()}
+    >
+      <button type="button" onClick={onView} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+        <Icon size={16} className="shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{result.fileName}</p>
+          {result.snippet ? (
+            <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{result.snippet}</p>
+          ) : result.sourcePath ? (
+            <p className="truncate text-[11px] text-muted-foreground">{result.sourcePath}</p>
+          ) : result.summary ? (
+            <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">{result.summary}</p>
+          ) : null}
+          {result.tags && (
+            <div className="mt-1 flex gap-1 flex-wrap">
+              {JSON.parse(result.tags)
+                .slice(0, 5)
+                .map((tag: string) => (
+                  <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {tag}
+                  </span>
+                ))}
+            </div>
+          )}
+        </div>
+      </button>
+
+      <span className="w-24 text-center">
+        {def ? (
+          <Badge variant="outline" className="gap-1 text-[10px]">
+            <ConnectorLogo type={def.type} size={10} style={{ color: def.color }} />
+            {def.name}
+          </Badge>
+        ) : (
+          <Badge variant="secondary" className="text-[10px]">
+            {result.source}
+          </Badge>
+        )}
+      </span>
+
+      <span className="w-16 text-center">
+        <Badge variant="secondary" className="text-[10px]">
+          {result.contentCategory === "document" ? "Doc" : result.contentCategory === "image" ? "Img" : "Data"}
+        </Badge>
+      </span>
+
+      <span className="w-20 text-center">
+        <span className="font-mono text-xs text-muted-foreground">{result.score.toFixed(4)}</span>
+      </span>
+
+      <span className="w-20 text-center">
+        {result.similarity != null ? (
+          <span className="font-mono text-xs text-muted-foreground">{(result.similarity * 100).toFixed(1)}%</span>
+        ) : (
+          <span className="text-[10px] text-muted-foreground/50">FTS only</span>
+        )}
+      </span>
+    </div>
+  );
+}
+
 function UnifiedFileRow({
   file,
   selected,
@@ -1125,7 +1276,7 @@ function UnifiedFileRow({
   onToggleSelect: () => void;
   onView: () => void;
 }) {
-  const def = getIntegration(file.connectorType as IntegrationType);
+  const def = getIntegration(file.source as IntegrationType);
   const Icon = file.contentCategory === "document" ? FileTextIcon : TableIcon;
 
   return (
@@ -1365,18 +1516,15 @@ function FileDetailContent({ file, access }: { file: FileContent; access: FileAc
 
 const COLLAPSED_MEMBER_LIMIT = 3;
 
-/** Display name for a member — prefers userName, then email, then numeric ID. */
-function memberDisplayName(member: { userName: string | null; providerEmail: string | null; providerUserId: string }) {
-  if (member.userName) return member.userName;
-  if (member.providerEmail) return member.providerEmail;
-  return member.providerUserId;
+/** Display name for a member — prefers userName, then email. */
+function memberDisplayName(member: { userName: string | null; email: string }) {
+  return member.userName ?? member.email;
 }
 
 /** First letter for avatar — prefers name, then email, falls back to "#". */
-function memberInitial(member: { userName: string | null; providerEmail: string | null }) {
+function memberInitial(member: { userName: string | null; email: string }) {
   if (member.userName) return member.userName[0].toUpperCase();
-  if (member.providerEmail) return member.providerEmail[0].toUpperCase();
-  return "#";
+  return member.email[0].toUpperCase();
 }
 
 function AccessSection({ access }: { access: FileAccess }) {
@@ -1411,7 +1559,7 @@ function AccessSection({ access }: { access: FileAccess }) {
           <div className="flex -space-x-1.5">
             {visibleMembers.map((member) => (
               <div
-                key={member.providerUserId}
+                key={member.email}
                 className={`flex size-6 items-center justify-center rounded-full border-2 border-background text-[9px] font-medium ${
                   member.mapped ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
                 }`}
@@ -1432,10 +1580,7 @@ function AccessSection({ access }: { access: FileAccess }) {
       {expanded && (
         <div className="mt-1.5 space-y-1">
           {members.map((member) => (
-            <div
-              key={member.providerUserId}
-              className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5"
-            >
+            <div key={member.email} className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5">
               <div
                 className={`flex size-6 items-center justify-center rounded-full text-[10px] font-medium ${
                   member.mapped ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
@@ -1446,10 +1591,8 @@ function AccessSection({ access }: { access: FileAccess }) {
               <div className="min-w-0 flex-1">
                 {member.userName ? (
                   <p className="truncate text-xs font-medium">{member.userName}</p>
-                ) : member.providerEmail ? (
-                  <p className="truncate text-xs text-muted-foreground">{member.providerEmail}</p>
                 ) : (
-                  <p className="truncate text-xs text-muted-foreground font-mono">{member.providerUserId}</p>
+                  <p className="truncate text-xs text-muted-foreground">{member.email}</p>
                 )}
               </div>
               {member.mapped ? (

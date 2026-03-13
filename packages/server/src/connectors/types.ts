@@ -58,24 +58,27 @@ export interface SyncedItem {
   contentHash: string | null;
   sourceCreatedAt: string | null;
   sourceUpdatedAt: string | null;
+  /** MIME type of the original file (e.g. "image/png", "application/pdf"). */
+  mimeType?: string;
   /**
-   * Provider user IDs who can access this item.
-   * - Array of provider-specific user IDs → creates file_access rows
-   * - null → no access restrictions (legacy/unrestricted)
+   * Scope-level access: assigns all files in a container (workspace, space, drive)
+   * to a shared member list. Stored once per scope, referenced by many files.
+   * Mutually exclusive with accessEmails for a given item.
    *
-   * Populated differently per provider:
-   * - ClickUp: space members (private) or all workspace members (public)
-   * - Google Drive: file permission grantee emails
-   * - Linear: team members (private) or all workspace members (public)
-   * - Notion: discovered via per-user token
+   * Used by: ClickUp (workspace/space), Google Drive (shared drives).
    */
-  accessibleBy: string[] | null;
+  accessScope?: {
+    scopeType: string;
+    providerScopeId: string;
+    label: string;
+    memberEmails: string[];
+  };
   /**
-   * Optional mapping of provider user ID → email address.
-   * Used to display human-readable identifiers for unmapped users.
-   * Only populated by connectors that expose member emails (e.g., ClickUp).
+   * Per-file email access list. Used when access varies per file
+   * (e.g., Google Drive My Drive files with individual sharing).
+   * null → no per-file restrictions.
    */
-  accessEmails?: Record<string, string>;
+  accessEmails?: string[] | null;
 }
 
 /**

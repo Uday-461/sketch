@@ -49,6 +49,9 @@ export interface SettingsTable {
   smtp_pass: string | null;
   smtp_from: string | null;
   smtp_secure: Generated<number>;
+  google_oauth_client_id: string | null;
+  google_oauth_client_secret: string | null;
+  gemini_api_key: string | null;
   onboarding_completed_at: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
@@ -60,7 +63,7 @@ export interface ConnectorConfigsTable {
   auth_type: string;
   credentials: string;
   scope_config: Generated<string>;
-  team_access: string | null;
+
   sync_status: Generated<string>;
   sync_cursor: string | null;
   last_synced_at: string | null;
@@ -91,17 +94,43 @@ export interface IndexedFilesTable {
   indexed_at: Generated<string>;
   context_note: string | null;
   enrichment_status: Generated<string>;
+  access_scope_id: string | null;
+  mime_type: string | null;
+  embedding_status: Generated<string>;
 }
 
-export interface TeamsTable {
+export interface DocumentChunksTable {
   id: string;
-  name: string;
-  created_at: Generated<string>;
+  indexed_file_id: string;
+  chunk_index: number;
+  content: string;
+  token_count: number | null;
 }
 
-export interface UserTeamsTable {
-  user_id: string;
-  team_id: string;
+export interface DocumentTimeframesTable {
+  id: string;
+  indexed_file_id: string;
+  start_date: string;
+  end_date: string | null;
+  context: string | null;
+}
+
+export interface AccessScopesTable {
+  id: string;
+  connector_config_id: string;
+  scope_type: string;
+  provider_scope_id: string;
+  label: string | null;
+}
+
+export interface AccessScopeMembersTable {
+  access_scope_id: string;
+  email: string;
+}
+
+export interface ConnectorFilesTable {
+  connector_config_id: string;
+  indexed_file_id: string;
 }
 
 export interface UserProviderIdentitiesTable {
@@ -118,8 +147,7 @@ export interface UserProviderIdentitiesTable {
 
 export interface FileAccessTable {
   indexed_file_id: string;
-  provider_user_id: string;
-  provider_email: string | null;
+  email: string;
 }
 
 export interface DB {
@@ -130,8 +158,11 @@ export interface DB {
   settings: SettingsTable;
   connector_configs: ConnectorConfigsTable;
   indexed_files: IndexedFilesTable;
-  teams: TeamsTable;
-  user_teams: UserTeamsTable;
+  access_scopes: AccessScopesTable;
+  access_scope_members: AccessScopeMembersTable;
+  connector_files: ConnectorFilesTable;
+  document_chunks: DocumentChunksTable;
+  document_timeframes: DocumentTimeframesTable;
   user_provider_identities: UserProviderIdentitiesTable;
   file_access: FileAccessTable;
 }

@@ -6,6 +6,7 @@ import { runAgent } from "./agent/runner";
 import { getSessionId } from "./agent/sessions";
 import { ensureChannelWorkspace, ensureGroupWorkspace, ensureWorkspace } from "./agent/workspace";
 import { loadConfig, validateConfig } from "./config";
+import { createLlmCallFn } from "./connectors/llm";
 import { startSyncScheduler } from "./connectors/sync";
 import { createDatabase } from "./db/index";
 import { runMigrations } from "./db/migrate";
@@ -585,8 +586,9 @@ if (!slack && !whatsappConnected) {
   logger.info("No channels active — pair WhatsApp via GET /api/channels/whatsapp/pair or configure Slack tokens");
 }
 
-// 11. Connector sync scheduler (every 30 minutes)
-const stopSyncScheduler = startSyncScheduler(db, logger);
+// 11. Connector sync scheduler (every 30 minutes) with enrichment
+const llmCall = createLlmCallFn();
+const stopSyncScheduler = startSyncScheduler(db, logger, 30 * 60 * 1000, { llmCall });
 
 // 12. Graceful shutdown
 async function shutdown() {

@@ -10,6 +10,8 @@ import type { Logger } from "pino";
 import { createConnectorRepository } from "../db/repositories/connectors";
 import type { DB } from "../db/schema";
 import { createClickUpConnector } from "./clickup";
+import { type EmbeddingProviderConfig, createEmbeddingProvider } from "./embeddings";
+import { clearEnrichmentData, runEnrichment } from "./enrichment";
 import { createGoogleDriveConnector } from "./google-drive";
 import { createLinearConnector } from "./linear";
 import { createNotionConnector } from "./notion";
@@ -109,6 +111,7 @@ export async function runConnectorSync(db: Kysely<DB>, connectorConfigId: string
 
         const upsertResult = await repo.upsertFile({
           connectorConfigId: config.id,
+          source: config.connector_type,
           providerFileId: item.providerFileId,
           providerUrl: item.providerUrl,
           fileName: item.fileName,
@@ -117,16 +120,27 @@ export async function runConnectorSync(db: Kysely<DB>, connectorConfigId: string
           content: item.content,
           summary: null,
           tags: JSON.stringify([config.connector_type, item.fileType].filter(Boolean)),
-          source: config.connector_type,
           sourcePath: item.sourcePath,
           contentHash: item.contentHash,
           sourceCreatedAt: item.sourceCreatedAt,
           sourceUpdatedAt: item.sourceUpdatedAt,
+          mimeType: item.mimeType,
         });
 
-        // Populate file_access rows if the connector provides access data
-        if (item.accessibleBy) {
-          await repo.syncFileAccess(upsertResult.id, item.accessibleBy, item.accessEmails);
+        // Clear enrichment data if content changed (will be re-enriched)
+        if (upsertResult.contentChanged) {
+          await clearEnrichmentData(db, upsertResult.id);
+        }
+
+        // Track which connector discovered this file
+        await repo.linkConnectorFile(config.id, upsertResult.id);
+
+        // Set access: scope-level or per-file emails
+        if (item.accessScope) {
+          const scopeId = await repo.upsertAccessScope(config.id, item.accessScope);
+          await repo.setFileAccessScope(upsertResult.id, scopeId);
+        } else if (item.accessEmails && item.accessEmails.length > 0) {
+          await repo.syncFileAccessEmails(upsertResult.id, item.accessEmails);
         }
 
         if (upsertResult.created) {
@@ -185,11 +199,18 @@ export async function runConnectorSync(db: Kysely<DB>, connectorConfigId: string
   }
 }
 
+export interface SyncSchedulerDeps {
+  /** LLM call function for tagging enrichment. */
+  llmCall?: (prompt: string) => Promise<import("./llm").LlmCallResult>;
+  /** Download image from Google Drive for embedding. */
+  downloadImage?: (providerFileId: string, connectorConfigId: string) => Promise<{ buffer: Buffer; mimeType: string }>;
+}
+
 /**
- * Run sync for all connectors that are due.
+ * Run sync for all connectors that are due, then run enrichment.
  * Called on a schedule (e.g., every 30 minutes).
  */
-export async function runAllSyncs(db: Kysely<DB>, logger: Logger): Promise<void> {
+export async function runAllSyncs(db: Kysely<DB>, logger: Logger, deps?: SyncSchedulerDeps): Promise<void> {
   const repo = createConnectorRepository(db);
   const configs = await repo.findSyncableConfigs();
 
@@ -201,6 +222,41 @@ export async function runAllSyncs(db: Kysely<DB>, logger: Logger): Promise<void>
     } catch (err) {
       logger.error({ err, connectorId: config.id }, "Scheduled sync failed for connector");
     }
+  }
+
+  // Run enrichment after all syncs complete
+  try {
+    const settings = await db
+      .selectFrom("settings")
+      .select(["gemini_api_key", "org_name"])
+      .where("id", "=", "default")
+      .executeTakeFirst();
+
+    const embeddingProvider = settings?.gemini_api_key
+      ? createEmbeddingProvider({ provider: "gemini", apiKey: settings.gemini_api_key })
+      : null;
+
+    const enrichResult = await runEnrichment({
+      db,
+      logger: logger.child({ component: "enrichment" }),
+      embeddingProvider,
+      llmCall: deps?.llmCall ?? (async () => ({ text: "{}", inputTokens: 0, outputTokens: 0 })),
+      downloadImage: deps?.downloadImage,
+      orgContext: buildOrgContext(settings?.org_name ?? null),
+    });
+
+    if (enrichResult.filesProcessed > 0 || enrichResult.filesFailed > 0) {
+      logger.info(
+        {
+          enriched: enrichResult.filesProcessed,
+          failed: enrichResult.filesFailed,
+          skipped: enrichResult.filesSkipped,
+        },
+        "Post-sync enrichment complete",
+      );
+    }
+  } catch (err) {
+    logger.error({ err }, "Post-sync enrichment failed");
   }
 }
 
@@ -231,14 +287,59 @@ async function recoverStaleSyncs(db: Kysely<DB>, logger: Logger): Promise<void> 
  * Recovers any stuck syncs on startup, then runs periodically.
  * Returns a cleanup function to stop the scheduler.
  */
-export function startSyncScheduler(db: Kysely<DB>, logger: Logger, intervalMs = 30 * 60 * 1000): () => void {
+export function startSyncScheduler(
+  db: Kysely<DB>,
+  logger: Logger,
+  intervalMs = 30 * 60 * 1000,
+  deps?: SyncSchedulerDeps,
+): () => void {
   // Recover any connectors stuck in "syncing" from a previous crash
   recoverStaleSyncs(db, logger).catch((err) => {
     logger.error({ err }, "Failed to recover stale syncs on startup");
   });
 
+  // Run enrichment immediately for any pending files (without triggering a full sync)
+  (async () => {
+    try {
+      // TODO: Remove this one-time reset after all files are re-tagged with improved prompt
+      const resetCount = await db
+        .updateTable("indexed_files")
+        .set({ embedding_status: "pending", tags: null, summary: null })
+        .where("embedding_status", "in", ["done", "failed", "processing", "skipped"])
+        .executeTakeFirst();
+      if (resetCount.numUpdatedRows > 0n) {
+        // Clear all chunks and timeframes
+        await db.deleteFrom("document_chunks").execute();
+        await db.deleteFrom("document_timeframes").execute();
+        logger.info({ reset: Number(resetCount.numUpdatedRows) }, "Reset files for re-enrichment (cleared tags, summaries, chunks)");
+      }
+
+      const settings = await db
+        .selectFrom("settings")
+        .select(["gemini_api_key", "org_name"])
+        .where("id", "=", "default")
+        .executeTakeFirst();
+      const embeddingProvider = settings?.gemini_api_key
+        ? createEmbeddingProvider({ provider: "gemini", apiKey: settings.gemini_api_key })
+        : null;
+      const orgContext = buildOrgContext(settings?.org_name ?? null);
+      const result = await runEnrichment({
+        db,
+        logger: logger.child({ component: "enrichment" }),
+        embeddingProvider,
+        llmCall: deps?.llmCall ?? (async () => ({ text: "{}", inputTokens: 0, outputTokens: 0 })),
+        orgContext,
+      });
+      if (result.filesProcessed > 0 || result.filesFailed > 0) {
+        logger.info({ enriched: result.filesProcessed, failed: result.filesFailed }, "Startup enrichment complete");
+      }
+    } catch (err) {
+      logger.error({ err }, "Startup enrichment failed");
+    }
+  })();
+
   const timer = setInterval(() => {
-    runAllSyncs(db, logger).catch((err) => {
+    runAllSyncs(db, logger, deps).catch((err) => {
       logger.error({ err }, "Sync scheduler tick failed");
     });
   }, intervalMs);
@@ -249,4 +350,13 @@ export function startSyncScheduler(db: Kysely<DB>, logger: Logger, intervalMs = 
     clearInterval(timer);
     logger.info("Sync scheduler stopped");
   };
+}
+
+/**
+ * Build org context string for the tagging prompt.
+ * TODO: Replace with admin-configurable org brief from a settings field.
+ */
+function buildOrgContext(_orgName: string | null): string {
+  // Hardcoded org brief for now — move to settings UI later
+  return `His Canvas builds Sketch, an AI assistant platform for organisations. Previously operated as Apperture (a low-code data engineering platform — pitched to investors in 2023, did not raise). Pivoted to workflow automation / AI assistants in 2024. Key past clients from the Apperture era included Sangeetha Mobiles, WIOM, and Urbanpiper. The team works across engineering, marketing, and product. Documents span both the Apperture era and current His Canvas work.`;
 }
