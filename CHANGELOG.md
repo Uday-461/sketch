@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## [0.10.0] — 2026-03-13
+
+- Scheduled tasks: DB-backed recurring agent runs via ManageScheduledTasks MCP tool (cron, interval, once)
+- Three session modes for scheduled tasks: fresh (ephemeral), persistent (task-scoped), chat (continues conversation)
+- One-time future tasks with auto-completion after execution
+- Session persistence moved from filesystem to DB (chat_sessions table)
+- Postgres-compatible session upsert using empty-string sentinel instead of NULL thread_key
+- 839 tests (769 server + 70 frontend)
+
 ## [0.9.0] — 2026-03-12
 
 - Skill-provider bridge: `getProviderConfig` tool lets skills fetch org-level API key and user email at runtime
