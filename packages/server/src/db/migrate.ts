@@ -18,6 +18,7 @@ import * as m011 from "./migrations/011-mcp-server-mode";
 import * as m012 from "./migrations/012-chat-sessions";
 import * as m013 from "./migrations/013-scheduled-tasks";
 import * as m014 from "./migrations/014-chat-sessions-thread-key-sentinel";
+import * as m015 from "./migrations/015-whatsapp-groups";
 import type { DB } from "./schema";
 
 export async function runMigrations(db: Kysely<DB>): Promise<void> {
@@ -40,6 +41,7 @@ export async function runMigrations(db: Kysely<DB>): Promise<void> {
           "012-chat-sessions": m012,
           "013-scheduled-tasks": m013,
           "014-chat-sessions-thread-key-sentinel": m014,
+          "015-whatsapp-groups": m015,
         };
       },
     },

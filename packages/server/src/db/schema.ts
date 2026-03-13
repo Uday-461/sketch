@@ -30,6 +30,13 @@ export interface WhatsAppKeysTable {
   value: string;
 }
 
+export interface WhatsAppGroupsTable {
+  jid: string;
+  name: string;
+  description: string | null;
+  updated_at: Generated<string>;
+}
+
 export interface SettingsTable {
   id: string;
   admin_email: string | null;
@@ -115,6 +122,7 @@ export interface DB {
   channels: ChannelsTable;
   whatsapp_creds: WhatsAppCredsTable;
   whatsapp_keys: WhatsAppKeysTable;
+  whatsapp_groups: WhatsAppGroupsTable;
   settings: SettingsTable;
   email_verification_tokens: EmailVerificationTokensTable;
   magic_link_tokens: MagicLinkTokensTable;

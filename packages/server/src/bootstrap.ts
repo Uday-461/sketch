@@ -14,6 +14,7 @@ import { createChannelRepository } from "./db/repositories/channels";
 import { createMcpServerRepository } from "./db/repositories/mcp-servers";
 import { createSettingsRepository } from "./db/repositories/settings";
 import { createUserRepository } from "./db/repositories/users";
+import { createWhatsAppGroupRepository } from "./db/repositories/whatsapp-groups";
 import { createApp } from "./http";
 import { buildMcpConfig } from "./integrations/factory";
 import { createLogger } from "./logger";
@@ -62,6 +63,7 @@ export async function createServer(config: Config, options?: CreateServerOptions
   const channels = createChannelRepository(db);
   const settingsRepo = createSettingsRepository(db);
   const mcpServersRepo = createMcpServerRepository(db);
+  const whatsappGroupsRepo = createWhatsAppGroupRepository(db);
 
   // 4. LLM env from DB
   async function applyLlmEnvFromDb() {
@@ -95,7 +97,7 @@ export async function createServer(config: Config, options?: CreateServerOptions
   let slack: SlackBot | null = null;
 
   // 8. WhatsApp
-  const whatsapp = new WhatsAppBot({ db, logger });
+  const whatsapp = new WhatsAppBot({ db, logger, groupMetadataStore: whatsappGroupsRepo });
   const groupBuffer = new GroupBuffer();
 
   // 8.5. Task scheduler — getSlack is a lazy getter so the live slack reference is captured correctly
