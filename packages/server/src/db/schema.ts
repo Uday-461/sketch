@@ -87,7 +87,7 @@ export interface McpServersTable {
 export interface ChatSessionsTable {
   id: Generated<number>;
   workspace_key: string;
-  thread_key: string | null;
+  thread_key: Generated<string>;
   session_id: string;
   updated_at: Generated<string>;
 }

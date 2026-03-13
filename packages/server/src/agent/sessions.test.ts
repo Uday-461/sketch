@@ -18,14 +18,11 @@ async function createTestDb(): Promise<Kysely<DB>> {
     .createTable("chat_sessions")
     .addColumn("id", "integer", (col) => col.primaryKey().autoIncrement())
     .addColumn("workspace_key", "text", (col) => col.notNull())
-    .addColumn("thread_key", "text")
+    .addColumn("thread_key", "text", (col) => col.notNull().defaultTo(sql`''`))
     .addColumn("session_id", "text", (col) => col.notNull())
     .addColumn("updated_at", "text", (col) => col.notNull().defaultTo(sql`CURRENT_TIMESTAMP`))
+    .addUniqueConstraint("chat_sessions_workspace_thread_uidx", ["workspace_key", "thread_key"])
     .execute();
-
-  await sql`CREATE UNIQUE INDEX chat_sessions_workspace_thread_uidx ON chat_sessions (workspace_key, COALESCE(thread_key, ''))`.execute(
-    db,
-  );
 
   return db;
 }

@@ -1,18 +1,15 @@
 /**
  * Persists the Claude Agent SDK session ID per workspace (and optionally per thread) in the DB.
  *
- * DMs and group chats use a single workspace-level row (thread_key IS NULL).
+ * DMs and group chats use a workspace-level row (thread_key = '').
  * Channel mentions use per-thread rows (thread_key = threadTs) so threads don't
  * bleed into each other. The workspace_key is the directory name under workspaces/:
  * a user ID for DMs, "channel-{channelId}" for Slack channels, or "wa-group-{jid}"
  * for WhatsApp groups.
  *
- * UPSERT uses a raw INSERT ... ON CONFLICT DO UPDATE targeting the named expression
- * index "chat_sessions_workspace_thread_uidx" (on workspace_key, COALESCE(thread_key, '')).
- * Kysely's typed onConflict() builder does not support expression-based index targets,
- * so we fall back to sql`` for the upsert statement only.
+ * Uses '' (empty string) as the sentinel for "no thread" instead of NULL so the
+ * UNIQUE(workspace_key, thread_key) constraint works identically in SQLite and Postgres.
  */
-import { sql } from "kysely";
 import type { Kysely } from "kysely";
 import type { DB } from "../db/schema";
 
@@ -25,7 +22,7 @@ export async function getSessionId(
     .selectFrom("chat_sessions")
     .select("session_id")
     .where("workspace_key", "=", workspaceKey)
-    .where("thread_key", threadKey !== undefined ? "=" : "is", threadKey ?? null)
+    .where("thread_key", "=", threadKey ?? "")
     .executeTakeFirst();
   return row?.session_id;
 }
@@ -36,10 +33,13 @@ export async function saveSessionId(
   sessionId: string,
   threadKey?: string,
 ): Promise<void> {
-  await sql`
-    INSERT INTO chat_sessions (workspace_key, thread_key, session_id)
-    VALUES (${workspaceKey}, ${threadKey ?? null}, ${sessionId})
-    ON CONFLICT (workspace_key, COALESCE(thread_key, ''))
-    DO UPDATE SET session_id = excluded.session_id, updated_at = CURRENT_TIMESTAMP
-  `.execute(db);
+  await db
+    .insertInto("chat_sessions")
+    .values({ workspace_key: workspaceKey, thread_key: threadKey ?? "", session_id: sessionId })
+    .onConflict((oc) =>
+      oc.columns(["workspace_key", "thread_key"]).doUpdateSet({
+        session_id: sessionId,
+      }),
+    )
+    .execute();
 }
