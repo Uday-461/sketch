@@ -52,6 +52,7 @@ export function wireTelegramHandlers(telegram: TelegramBot, deps: TelegramAdapte
     if (message.type === "dm") {
       const user = await repos.users.findByTelegramId(message.senderId);
       if (!user) {
+        logger.info({ telegramUserId: message.senderId }, "Unauthorized Telegram DM — user not found");
         await telegram.sendText(
           message.chatId,
           "Sorry, you're not authorized to use this bot. Contact your admin to get access.",
@@ -162,7 +163,7 @@ export function wireTelegramHandlers(telegram: TelegramBot, deps: TelegramAdapte
         const integrationMcpServers = await buildMcpServers(user?.email ?? null);
 
         const result = await runAgent({
-          db: deps.config as unknown as RunAgentParams["db"],
+          db,
           workspaceKey: `tg-group-${message.chatId}`,
           userMessage,
           workspaceDir,
