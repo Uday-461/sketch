@@ -4,7 +4,9 @@
  */
 
 import type { SkillCategory } from "@/lib/skills-data";
-import type { IntegrationApp, IntegrationConnection, McpServerRecord, PageInfo } from "@sketch/shared";
+import type { FileMetadata, IntegrationApp, IntegrationConnection, McpServerRecord, PageInfo } from "@sketch/shared";
+
+export type WorkspaceScope = "personal" | "org";
 
 export interface ApiError {
   error: { code: string; message: string };
@@ -47,7 +49,8 @@ export interface ScheduledTaskListItem {
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { ...((options?.headers as Record<string, string>) ?? {}) };
-  if (options?.body) {
+  // Skip Content-Type for FormData — the browser sets it automatically with the correct multipart boundary
+  if (options?.body && !(options.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
   const res = await fetch(url, {
@@ -363,6 +366,109 @@ export const api = {
       return request<void>(`/api/mcp-servers/${providerId}/connections/${connectionId}`, {
         method: "DELETE",
       });
+    },
+  },
+  workspace: {
+    // List directory contents
+    async listFiles(scope: WorkspaceScope, path: string): Promise<{ files: FileMetadata[] }> {
+      const params = new URLSearchParams();
+      params.set("scope", scope);
+      params.set("path", path);
+      return request<{ files: FileMetadata[] }>(`/api/workspace/files?${params.toString()}`);
+    },
+
+    // Get file content (text or metadata for binary)
+    async getFileContent(
+      scope: WorkspaceScope,
+      path: string,
+    ): Promise<{ content: string; isText: boolean; size: number; mimeType: string | null }> {
+      const params = new URLSearchParams();
+      params.set("scope", scope);
+      params.set("path", path);
+      return request<{ content: string; isText: boolean; size: number; mimeType: string | null }>(
+        `/api/workspace/files/content?${params.toString()}`,
+      );
+    },
+
+    // Save file content
+    async saveFile(scope: WorkspaceScope, path: string, content: string): Promise<{ success: boolean }> {
+      const params = new URLSearchParams();
+      params.set("scope", scope);
+      params.set("path", path);
+      return request<{ success: boolean }>(`/api/workspace/files/content?${params.toString()}`, {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      });
+    },
+
+    // Upload file
+    async uploadFile(scope: WorkspaceScope, path: string, formData: FormData): Promise<{ success: boolean }> {
+      const params = new URLSearchParams();
+      params.set("scope", scope);
+      params.set("path", path);
+      return request<{ success: boolean }>(`/api/workspace/files?${params.toString()}`, {
+        method: "POST",
+        body: formData,
+      });
+    },
+
+    // Create folder
+    async createFolder(scope: WorkspaceScope, path: string): Promise<{ success: boolean }> {
+      return request<{ success: boolean }>(`/api/workspace/folders?scope=${scope}`, {
+        method: "POST",
+        body: JSON.stringify({ path }),
+      });
+    },
+
+    // Create empty file
+    async createFile(scope: WorkspaceScope, path: string): Promise<{ success: boolean }> {
+      const params = new URLSearchParams();
+      params.set("scope", scope);
+      params.set("path", path);
+      return request<{ success: boolean }>(`/api/workspace/files/content?${params.toString()}`, {
+        method: "PUT",
+        body: JSON.stringify({ content: "" }),
+      });
+    },
+
+    // Delete file or folder
+    async deleteFile(scope: WorkspaceScope, path: string): Promise<{ success: boolean }> {
+      const params = new URLSearchParams();
+      params.set("scope", scope);
+      params.set("path", path);
+      return request<{ success: boolean }>(`/api/workspace/files?${params.toString()}`, {
+        method: "DELETE",
+      });
+    },
+
+    // Rename file or folder
+    async renameFile(scope: WorkspaceScope, oldPath: string, newPath: string): Promise<{ success: boolean }> {
+      return request<{ success: boolean }>(`/api/workspace/files/rename?scope=${scope}`, {
+        method: "PATCH",
+        body: JSON.stringify({ oldPath, newPath }),
+      });
+    },
+
+    // Search files recursively
+    async searchFiles(scope: WorkspaceScope, query: string): Promise<{ files: FileMetadata[] }> {
+      const params = new URLSearchParams();
+      params.set("scope", scope);
+      params.set("q", query);
+      return request<{ files: FileMetadata[] }>(`/api/workspace/files/search?${params.toString()}`);
+    },
+
+    // Download file (triggers browser download for all file types without navigating away)
+    downloadFile(scope: WorkspaceScope, path: string): void {
+      const params = new URLSearchParams();
+      params.set("scope", scope);
+      params.set("path", path);
+      params.set("download", "true");
+      const a = document.createElement("a");
+      a.href = `/api/workspace/files/content?${params.toString()}`;
+      a.download = path.split("/").pop() || "download";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     },
   },
 };

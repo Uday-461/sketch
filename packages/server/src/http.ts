@@ -19,6 +19,7 @@ import { setupRoutes } from "./api/setup";
 import { skillsRoutes } from "./api/skills";
 import { userRoutes } from "./api/users";
 import { whatsappRoutes } from "./api/whatsapp";
+import { createWorkspaceApi } from "./api/workspace";
 import type { Config } from "./config";
 import { createMcpServerRepository } from "./db/repositories/mcp-servers";
 import { createSettingsRepository } from "./db/repositories/settings";
@@ -63,6 +64,7 @@ export function createApp(db: Kysely<DB>, config: Config, deps?: AppDeps) {
   app.route("/api/skills", skillsRoutes(config));
   app.route("/api/users", userRoutes(users, { settings, db, logger, config }));
   app.route("/api/mcp-servers", mcpServerRoutes(mcpServers, users));
+  app.route("/api/workspace", createWorkspaceApi({ config }));
   if (deps?.scheduler) {
     app.route("/api/scheduled-tasks", scheduledTaskRoutes(db, deps.scheduler));
   }

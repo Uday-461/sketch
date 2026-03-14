@@ -65,7 +65,7 @@ function DashboardLayout() {
       <AppSidebar displayName={auth.displayName} displayIdentifier={auth.displayIdentifier} role={auth.role} />
       <SidebarInset>
         <SidebarTrigger className="absolute left-3 top-3 z-20" />
-        <main className="flex-1 overflow-auto pt-10">
+        <main className="flex-1 overflow-auto pt-[52px]">
           <Outlet />
         </main>
       </SidebarInset>

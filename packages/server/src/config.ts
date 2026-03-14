@@ -19,6 +19,7 @@ export const configSchema = z.object({
 
   // Files
   MAX_FILE_SIZE_MB: z.coerce.number().default(20),
+  MAX_UPLOAD_SIZE_MB: z.coerce.number().default(50),
 
   // Server
   BASE_URL: z.string().optional(),

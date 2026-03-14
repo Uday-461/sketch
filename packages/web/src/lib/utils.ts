@@ -22,3 +22,15 @@ export function getAbbreviation(name: string): string {
     .slice(0, 2)
     .toUpperCase();
 }
+
+/**
+ * Format file size in human-readable format
+ * 1024 bytes → "1 KB", 1024*1024 → "1 MB"
+ */
+export function formatFileSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${Number.parseFloat((bytes / k ** i).toFixed(1))} ${sizes[i]}`;
+}
