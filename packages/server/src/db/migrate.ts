@@ -11,16 +11,19 @@ import * as m004 from "./migrations/004-settings";
 import * as m005 from "./migrations/005-settings-slack-llm";
 import * as m006 from "./migrations/006-settings-jwt-secret";
 import * as m007 from "./migrations/007-connectors";
-import * as m008 from "./migrations/008-connector-enrichment";
-import * as m009 from "./migrations/009-teams";
-import * as m010 from "./migrations/010-user-provider-identities";
-import * as m011 from "./migrations/011-file-access-email";
+import * as m008 from "./migrations/008-user-provider-identities";
+import * as m009 from "./migrations/009-file-access";
+import * as m010 from "./migrations/010-settings-extended";
+import * as m011 from "./migrations/011-semantic-search";
 import * as m012 from "./migrations/012-settings-smtp";
-import * as m013 from "./migrations/013-remove-teams";
-import * as m014 from "./migrations/014-google-oauth-settings";
-import * as m015 from "./migrations/015-file-access-redesign";
-import * as m016 from "./migrations/016-semantic-search";
-import * as m017 from "./migrations/017-fts-add-source-path";
+import * as m013 from "./migrations/013-email-verification";
+import * as m014 from "./migrations/014-magic-link-tokens";
+import * as m015 from "./migrations/015-mcp-servers";
+import * as m016 from "./migrations/016-mcp-server-mode";
+import * as m017 from "./migrations/017-chat-sessions";
+import * as m018 from "./migrations/018-scheduled-tasks";
+import * as m019 from "./migrations/019-chat-sessions-thread-key-sentinel";
+import * as m020 from "./migrations/020-whatsapp-groups";
 import type { DB } from "./schema";
 
 export async function runMigrations(db: Kysely<DB>): Promise<void> {
@@ -36,16 +39,19 @@ export async function runMigrations(db: Kysely<DB>): Promise<void> {
           "005-settings-slack-llm": m005,
           "006-settings-jwt-secret": m006,
           "007-connectors": m007,
-          "008-connector-enrichment": m008,
-          "009-teams": m009,
-          "010-user-provider-identities": m010,
-          "011-file-access-email": m011,
+          "008-user-provider-identities": m008,
+          "009-file-access": m009,
+          "010-settings-extended": m010,
+          "011-semantic-search": m011,
           "012-settings-smtp": m012,
-          "013-remove-teams": m013,
-          "014-google-oauth-settings": m014,
-          "015-file-access-redesign": m015,
-          "016-semantic-search": m016,
-          "017-fts-add-source-path": m017,
+          "013-email-verification": m013,
+          "014-magic-link-tokens": m014,
+          "015-mcp-servers": m015,
+          "016-mcp-server-mode": m016,
+          "017-chat-sessions": m017,
+          "018-scheduled-tasks": m018,
+          "019-chat-sessions-thread-key-sentinel": m019,
+          "020-whatsapp-groups": m020,
         };
       },
     },

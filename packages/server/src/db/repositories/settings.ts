@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { Kysely } from "kysely";
-import type { DB } from "../schema.js";
+import type { DB } from "../schema";
 
 export function createSettingsRepository(db: Kysely<DB>) {
   return {
@@ -41,7 +41,7 @@ export function createSettingsRepository(db: Kysely<DB>) {
         smtpHost: string | null;
         smtpPort: number | null;
         smtpUser: string | null;
-        smtpPass: string | null;
+        smtpPassword: string | null;
         smtpFrom: string | null;
         smtpSecure: number | null;
         googleOauthClientId: string | null;
@@ -66,7 +66,7 @@ export function createSettingsRepository(db: Kysely<DB>) {
       if (data.smtpHost !== undefined) updates.smtp_host = data.smtpHost;
       if (data.smtpPort !== undefined) updates.smtp_port = data.smtpPort;
       if (data.smtpUser !== undefined) updates.smtp_user = data.smtpUser;
-      if (data.smtpPass !== undefined) updates.smtp_pass = data.smtpPass;
+      if (data.smtpPassword !== undefined) updates.smtp_password = data.smtpPassword;
       if (data.smtpFrom !== undefined) updates.smtp_from = data.smtpFrom;
       if (data.smtpSecure !== undefined) updates.smtp_secure = data.smtpSecure;
       if (data.googleOauthClientId !== undefined) updates.google_oauth_client_id = data.googleOauthClientId;

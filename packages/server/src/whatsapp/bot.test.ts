@@ -1,6 +1,7 @@
 import type { proto } from "@whiskeysockets/baileys";
 import type { Kysely } from "kysely";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createWhatsAppGroupRepository } from "../db/repositories/whatsapp-groups";
 import type { DB } from "../db/schema";
 import { createTestDb, createTestLogger } from "../test-utils";
 import {
@@ -270,6 +271,106 @@ describe("WhatsAppBot.composing", () => {
     // Should not throw
     bot.startComposing("123@s.whatsapp.net");
     bot.stopComposing("123@s.whatsapp.net");
+  });
+});
+
+describe("WhatsAppBot group metadata persistence", () => {
+  let db: Kysely<DB>;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+  });
+
+  afterEach(async () => {
+    await db.destroy();
+  });
+
+  it("persists fetched group metadata on first lookup", async () => {
+    const bot = new WhatsAppBot({
+      db,
+      logger: createTestLogger(),
+      groupMetadataStore: createWhatsAppGroupRepository(db),
+    });
+
+    const groupMetadata = vi.fn().mockResolvedValue({ subject: "Product Team", desc: "Roadmap syncs" });
+    (bot as unknown as { sock: { groupMetadata: typeof groupMetadata } }).sock = { groupMetadata };
+
+    const meta = await bot.getGroupMetadata("123@g.us");
+
+    expect(meta?.subject).toBe("Product Team");
+    const stored = await db.selectFrom("whatsapp_groups").selectAll().where("jid", "=", "123@g.us").executeTakeFirst();
+    expect(stored?.name).toBe("Product Team");
+    expect(stored?.description).toBe("Roadmap syncs");
+  });
+
+  it("refreshes persisted metadata when a groups.update event arrives", async () => {
+    const handlers = new Map<string, (...args: unknown[]) => Promise<void>>();
+    const bot = new WhatsAppBot({
+      db,
+      logger: createTestLogger(),
+      groupMetadataStore: createWhatsAppGroupRepository(db),
+    });
+
+    const groupMetadata = vi.fn().mockResolvedValue({ subject: "Renamed Group", desc: "Updated desc" });
+    (
+      bot as unknown as {
+        sock: {
+          groupMetadata: typeof groupMetadata;
+          ev: { on: (event: string, handler: (...args: unknown[]) => Promise<void>) => void };
+        };
+      }
+    ).sock = {
+      groupMetadata,
+      ev: {
+        on: (event, handler) => {
+          handlers.set(event, handler);
+        },
+      },
+    };
+
+    (bot as unknown as { registerGroupEventHandlers: () => void }).registerGroupEventHandlers();
+    await handlers.get("groups.update")?.([{ id: "group@g.us" }]);
+
+    const stored = await db
+      .selectFrom("whatsapp_groups")
+      .selectAll()
+      .where("jid", "=", "group@g.us")
+      .executeTakeFirst();
+    expect(stored?.name).toBe("Renamed Group");
+    expect(stored?.description).toBe("Updated desc");
+  });
+
+  it("does not throw when group metadata refresh fails during event handling", async () => {
+    const handlers = new Map<string, (...args: unknown[]) => Promise<void>>();
+    const bot = new WhatsAppBot({
+      db,
+      logger: createTestLogger(),
+      groupMetadataStore: createWhatsAppGroupRepository(db),
+    });
+
+    const groupMetadata = vi.fn().mockRejectedValue(new Error("boom"));
+    (
+      bot as unknown as {
+        sock: {
+          groupMetadata: typeof groupMetadata;
+          ev: { on: (event: string, handler: (...args: unknown[]) => Promise<void>) => void };
+        };
+      }
+    ).sock = {
+      groupMetadata,
+      ev: {
+        on: (event, handler) => {
+          handlers.set(event, handler);
+        },
+      },
+    };
+
+    (bot as unknown as { registerGroupEventHandlers: () => void }).registerGroupEventHandlers();
+
+    await expect(handlers.get("group-participants.update")?.({ id: "group@g.us" })).resolves.toBeUndefined();
+    await expect(
+      db.selectFrom("whatsapp_groups").selectAll().where("jid", "=", "group@g.us").executeTakeFirst(),
+    ).resolves.toBeUndefined();
   });
 });
 

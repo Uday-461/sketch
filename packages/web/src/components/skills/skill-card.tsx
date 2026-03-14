@@ -14,15 +14,18 @@ import { Download, Star, Store } from "lucide-react";
 
 interface SkillCardProps {
   skill: Skill;
+  isAdmin?: boolean;
   onCardClick: (skillId: string) => void;
   onDuplicate: (skill: Skill) => void;
   onDelete: (skill: Skill) => void;
 }
 
-export function SkillCard({ skill, onCardClick, onDuplicate, onDelete }: SkillCardProps) {
+export function SkillCard({ skill, isAdmin, onCardClick, onDuplicate, onDelete }: SkillCardProps) {
   return (
-    <button
-      type="button"
+    // biome-ignore lint/a11y/useSemanticElements: div instead of button to avoid nested button hydration error
+    <div
+      role="button"
+      tabIndex={0}
       className={cn(
         "cursor-pointer rounded-xl border bg-card p-5 transition-[background-color,border-color] duration-200 ease-in-out flex flex-col text-left w-full",
         // Light mode (theme-aware)
@@ -31,6 +34,12 @@ export function SkillCard({ skill, onCardClick, onDuplicate, onDelete }: SkillCa
         "dark:border-[rgba(255,255,255,0.07)] dark:hover:border-[rgba(255,255,255,0.2)] dark:hover:bg-[rgba(107,125,250,0.03)]",
       )}
       onClick={() => onCardClick(skill.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onCardClick(skill.id);
+        }
+      }}
     >
       {/* Top row: category pill + source tags + overflow */}
       <div className="flex items-center justify-between gap-2">
@@ -40,21 +49,23 @@ export function SkillCard({ skill, onCardClick, onDuplicate, onDelete }: SkillCa
           </span>
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-7 shrink-0" onClick={(e) => e.stopPropagation()}>
-              <DotsThreeIcon size={16} className="text-muted-foreground" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-            <DropdownMenuItem onClick={() => onDuplicate(skill)}>Duplicate</DropdownMenuItem>
-            {/* TODO: Enable/Disable skill will be implemented later. */}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={() => onDelete(skill)}>
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {isAdmin && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-7 shrink-0" onClick={(e) => e.stopPropagation()}>
+                <DotsThreeIcon size={16} className="text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuItem onClick={() => onDuplicate(skill)}>Duplicate</DropdownMenuItem>
+              {/* TODO: Enable/Disable skill will be implemented later. */}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onClick={() => onDelete(skill)}>
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       {/* Skill name */}
@@ -83,6 +94,6 @@ export function SkillCard({ skill, onCardClick, onDuplicate, onDelete }: SkillCa
           </div>
         ) : null}
       </div>
-    </button>
+    </div>
   );
 }

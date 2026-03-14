@@ -4,6 +4,7 @@
  */
 
 import type { SkillCategory } from "@/lib/skills-data";
+import type { IntegrationApp, IntegrationConnection, McpServerRecord, PageInfo } from "@sketch/shared";
 
 export interface ApiError {
   error: { code: string; message: string };
@@ -13,18 +14,45 @@ export interface User {
   id: string;
   name: string;
   email: string | null;
+  email_verified_at: string | null;
   slack_user_id: string | null;
   whatsapp_number: string | null;
   created_at: string;
 }
 
+export interface ScheduledTaskListItem {
+  id: string;
+  platform: "slack" | "whatsapp";
+  contextType: "dm" | "channel" | "group";
+  deliveryTarget: string;
+  threadTs: string | null;
+  prompt: string;
+  scheduleType: "cron" | "interval" | "once";
+  scheduleValue: string;
+  timezone: string;
+  sessionMode: "fresh" | "persistent" | "chat";
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  status: "active" | "paused" | "completed";
+  createdBy: string | null;
+  createdAt: string;
+  targetLabel: string;
+  targetKindLabel: "Slack DM" | "Slack channel" | "WhatsApp DM" | "WhatsApp group";
+  creatorName: string | null;
+  scheduleLabel: string;
+  canPause: boolean;
+  canResume: boolean;
+  canDelete: boolean;
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = { ...((options?.headers as Record<string, string>) ?? {}) };
+  if (options?.body) {
+    headers["Content-Type"] = "application/json";
+  }
   const res = await fetch(url, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    headers,
   });
 
   if (!res.ok) {
@@ -39,8 +67,9 @@ export interface ChannelStatus {
   platform: "slack" | "whatsapp" | "email";
   configured: boolean;
   connected: boolean | null;
-  phoneNumber: string | null;
-  fromAddress: string | null;
+  phoneNumber?: string | null;
+  fromAddress?: string | null;
+  outboundOnly?: boolean;
 }
 
 export interface SetupStatus {
@@ -138,6 +167,14 @@ export interface ProviderIdentity {
   hasToken: boolean;
 }
 
+export interface SessionResponse {
+  authenticated: boolean;
+  role?: "admin" | "member";
+  email?: string;
+  userId?: string;
+  name?: string;
+}
+
 export interface SkillRecord {
   id: string;
   name: string;
@@ -212,7 +249,15 @@ export const api = {
       return request<{ authenticated: boolean }>("/api/auth/logout", { method: "POST" });
     },
     session() {
-      return request<{ authenticated: boolean; email?: string }>("/api/auth/session");
+      return request<SessionResponse>("/api/auth/session");
+    },
+    magicLink: {
+      request(email: string) {
+        return request<{ success: boolean }>("/api/auth/magic-link", {
+          method: "POST",
+          body: JSON.stringify({ email }),
+        });
+      },
     },
   },
   channels: {
@@ -222,14 +267,23 @@ export const api = {
     disconnectSlack() {
       return request<{ success: boolean }>("/api/channels/slack", { method: "DELETE" });
     },
-  },
-  email: {
-    verifySmtp(data: { host: string; port: number; user: string; pass: string; from: string; secure: boolean }) {
-      return request<{ success: boolean }>("/api/channels/email/verify", {
+    testEmail(config: { host: string; port: number; user: string; password: string; from: string }) {
+      return request<{ success: boolean }>("/api/channels/email/test", {
         method: "POST",
-        body: JSON.stringify(data),
+        body: JSON.stringify(config),
       });
     },
+    saveEmail(config: { host: string; port: number; user: string; password: string; from: string }) {
+      return request<{ success: boolean }>("/api/channels/email", {
+        method: "PUT",
+        body: JSON.stringify(config),
+      });
+    },
+    deleteEmail() {
+      return request<{ success: boolean }>("/api/channels/email", { method: "DELETE" });
+    },
+  },
+  email: {
     configure(data: { host: string; port: number; user: string; pass: string; from: string; secure: boolean }) {
       return request<{ success: boolean }>("/api/channels/email/configure", {
         method: "POST",
@@ -239,23 +293,8 @@ export const api = {
     disconnect() {
       return request<{ success: boolean }>("/api/channels/email/configure", { method: "DELETE" });
     },
-    sendCode(email: string) {
-      return request<{ success: boolean }>("/api/channels/email/send-code", {
-        method: "POST",
-        body: JSON.stringify({ email }),
-      });
-    },
-    verifyCode(email: string, code: string) {
-      return request<{ success: boolean; email: string }>("/api/channels/email/verify-code", {
-        method: "POST",
-        body: JSON.stringify({ email, code }),
-      });
-    },
   },
   whatsapp: {
-    status() {
-      return request<{ connected: boolean; phoneNumber: string | null }>("/api/channels/whatsapp");
-    },
     cancelPairing() {
       return request<{ success: boolean }>("/api/channels/whatsapp/pair", { method: "DELETE" });
     },
@@ -387,20 +426,48 @@ export const api = {
     list() {
       return request<{ users: User[] }>("/api/users");
     },
-    create(data: { name: string; email?: string; whatsappNumber?: string }) {
-      return request<{ user: User }>("/api/users", {
+    create(data: { name: string; email?: string | null; whatsappNumber?: string | null }) {
+      return request<{ user: User; verificationSent?: boolean }>("/api/users", {
         method: "POST",
         body: JSON.stringify(data),
       });
     },
     update(id: string, data: { name?: string; email?: string | null; whatsappNumber?: string | null }) {
-      return request<{ user: User }>(`/api/users/${id}`, {
+      return request<{ user: User; verificationSent?: boolean }>(`/api/users/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
       });
     },
+    resendVerification(id: string) {
+      return request<{ success: boolean; sent: boolean }>(`/api/users/${id}/verification`, {
+        method: "POST",
+      });
+    },
     remove(id: string) {
       return request<{ success: boolean }>(`/api/users/${id}`, {
+        method: "DELETE",
+      });
+    },
+  },
+  scheduledTasks: {
+    async list() {
+      const res = await request<{ tasks: ScheduledTaskListItem[] }>("/api/scheduled-tasks");
+      return res.tasks;
+    },
+    async pause(id: string) {
+      const res = await request<{ task: ScheduledTaskListItem }>(`/api/scheduled-tasks/${id}/pause`, {
+        method: "POST",
+      });
+      return res.task;
+    },
+    async resume(id: string) {
+      const res = await request<{ task: ScheduledTaskListItem }>(`/api/scheduled-tasks/${id}/resume`, {
+        method: "POST",
+      });
+      return res.task;
+    },
+    remove(id: string) {
+      return request<{ success: true }>(`/api/scheduled-tasks/${id}`, {
         method: "DELETE",
       });
     },
@@ -426,6 +493,84 @@ export const api = {
     },
     remove(id: string) {
       return request<{ success: true }>(`/api/skills/${id}`, { method: "DELETE" });
+    },
+  },
+  mcpServers: {
+    async list() {
+      const res = await request<{ servers: McpServerRecord[] }>("/api/mcp-servers");
+      return res.servers;
+    },
+    async add(data: {
+      displayName: string;
+      url: string;
+      apiUrl?: string;
+      credentials: Record<string, unknown>;
+      type?: string;
+      mode?: "mcp" | "skill";
+    }) {
+      const res = await request<{ server: McpServerRecord }>("/api/mcp-servers", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+      return res.server;
+    },
+    update(
+      id: string,
+      data: {
+        displayName?: string;
+        url?: string;
+        apiUrl?: string | null;
+        credentials?: Record<string, unknown>;
+        mode?: "mcp" | "skill";
+      },
+    ) {
+      return request<void>(`/api/mcp-servers/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+    remove(id: string) {
+      return request<void>(`/api/mcp-servers/${id}`, { method: "DELETE" });
+    },
+    testConnection(url: string, credentials: string) {
+      return request<{ status: "ok" | "error"; toolCount?: number; error?: string }>(
+        "/api/mcp-servers/connection-tests",
+        {
+          method: "POST",
+          body: JSON.stringify({ url, credentials }),
+        },
+      );
+    },
+    testConnectionById(serverId: string) {
+      return request<{ status: "ok" | "error"; toolCount?: number; error?: string }>(
+        `/api/mcp-servers/${serverId}/connection-tests`,
+        { method: "POST" },
+      );
+    },
+    listApps(providerId: string, query?: string, limit?: number, after?: string) {
+      const params = new URLSearchParams();
+      if (query) params.set("q", query);
+      if (limit) params.set("limit", String(limit));
+      if (after) params.set("after", after);
+      const qs = params.toString();
+      return request<{ apps: IntegrationApp[]; pageInfo: PageInfo }>(
+        `/api/mcp-servers/${providerId}/apps${qs ? `?${qs}` : ""}`,
+      );
+    },
+    createConnection(providerId: string, appId: string, callbackUrl?: string) {
+      return request<{ redirectUrl: string }>(`/api/mcp-servers/${providerId}/connections`, {
+        method: "POST",
+        body: JSON.stringify({ appId, callbackUrl }),
+      });
+    },
+    async listConnections(providerId: string) {
+      const res = await request<{ connections: IntegrationConnection[] }>(`/api/mcp-servers/${providerId}/connections`);
+      return res.connections;
+    },
+    removeConnection(providerId: string, connectionId: string) {
+      return request<void>(`/api/mcp-servers/${providerId}/connections/${connectionId}`, {
+        method: "DELETE",
+      });
     },
   },
 };

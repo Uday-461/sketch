@@ -34,8 +34,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import type { ProviderIdentity, User } from "@/lib/api";
 import { api } from "@/lib/api";
 import { INTEGRATIONS, getIntegration } from "@/lib/integrations";
+import { getInitials } from "@/lib/utils";
+import { type AuthContext, useDashboardAuth } from "@/routes/dashboard";
 import {
+  CheckCircleIcon,
+  ClockIcon,
   DotsThreeIcon,
+  EnvelopeIcon,
   EnvelopeSimpleIcon,
   LinkIcon,
   PencilSimpleIcon,
@@ -47,11 +52,28 @@ import {
   WhatsappLogoIcon,
   XIcon,
 } from "@phosphor-icons/react";
+import { emailSchema, whatsappNumberSchema } from "@sketch/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute, useRouteContext } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { z } from "zod";
 import { dashboardRoute } from "./dashboard";
+
+const optionalEmail = z.literal("").or(emailSchema);
+const optionalPhone = z.literal("").or(whatsappNumberSchema);
+
+const addMemberSchema = z.object({
+  name: z.string().min(1),
+  email: emailSchema,
+  whatsappNumber: optionalPhone,
+});
+
+const editMemberSchema = z.object({
+  name: z.string().min(1),
+  email: optionalEmail,
+  whatsappNumber: optionalPhone,
+});
 
 export const teamRoute = createRoute({
   getParentRoute: () => dashboardRoute,
@@ -60,7 +82,7 @@ export const teamRoute = createRoute({
 });
 
 export function TeamPage() {
-  const { auth } = useRouteContext({ from: dashboardRoute.id });
+  const auth = useDashboardAuth();
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["users"],
@@ -73,12 +95,13 @@ export function TeamPage() {
   const [linkingUser, setLinkingUser] = useState<User | null>(null);
 
   const users = data?.users ?? [];
+  const isMember = auth.role === "member";
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Team</h1>
-        {!isLoading && users.length > 0 && (
+        {!isMember && (
           <Button size="sm" onClick={() => setShowAddDialog(true)}>
             <PlusIcon size={14} weight="bold" />
             Add member
@@ -90,11 +113,15 @@ export function TeamPage() {
         {isLoading ? (
           <LoadingSkeleton />
         ) : users.length === 0 ? (
-          <EmptyState onAdd={() => setShowAddDialog(true)} />
+          isMember ? (
+            <p className="text-sm text-muted-foreground">No team members yet.</p>
+          ) : (
+            <EmptyState onAdd={() => setShowAddDialog(true)} />
+          )
         ) : (
           <MemberList
             users={users}
-            adminEmail={auth.email ?? ""}
+            auth={auth}
             onEdit={setEditingUser}
             onRemove={setRemovingUser}
             onLink={setLinkingUser}
@@ -102,16 +129,19 @@ export function TeamPage() {
         )}
       </div>
 
-      <AddMemberDialog
-        open={showAddDialog}
-        onOpenChange={setShowAddDialog}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ["users"] });
-        }}
-      />
+      {!isMember && (
+        <AddMemberDialog
+          open={showAddDialog}
+          onOpenChange={setShowAddDialog}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ["users"] });
+          }}
+        />
+      )}
 
       <EditMemberDialog
         user={editingUser}
+        isMember={isMember}
         onOpenChange={(open) => !open && setEditingUser(null)}
         onSuccess={() => {
           setEditingUser(null);
@@ -119,14 +149,16 @@ export function TeamPage() {
         }}
       />
 
-      <RemoveMemberDialog
-        user={removingUser}
-        onOpenChange={(open) => !open && setRemovingUser(null)}
-        onSuccess={() => {
-          setRemovingUser(null);
-          queryClient.invalidateQueries({ queryKey: ["users"] });
-        }}
-      />
+      {!isMember && (
+        <RemoveMemberDialog
+          user={removingUser}
+          onOpenChange={(open) => !open && setRemovingUser(null)}
+          onSuccess={() => {
+            setRemovingUser(null);
+            queryClient.invalidateQueries({ queryKey: ["users"] });
+          }}
+        />
+      )}
 
       <LinkProviderDialog user={linkingUser} onOpenChange={(open) => !open && setLinkingUser(null)} />
     </div>
@@ -135,32 +167,39 @@ export function TeamPage() {
 
 function MemberList({
   users,
-  adminEmail,
+  auth,
   onEdit,
   onRemove,
   onLink,
 }: {
   users: User[];
-  adminEmail: string;
+  auth: AuthContext;
   onEdit: (user: User) => void;
   onRemove: (user: User) => void;
   onLink: (user: User) => void;
 }) {
+  const isMember = auth.role === "member";
+
   return (
     <>
       <p className="mb-3 text-sm font-medium text-muted-foreground">Team members</p>
       <div className="rounded-lg border border-border bg-card">
-        {users.map((user, i) => (
-          <MemberRow
-            key={user.id}
-            user={user}
-            isCurrentAdmin={!!user.email && user.email === adminEmail}
-            isLast={i === users.length - 1}
-            onEdit={() => onEdit(user)}
-            onRemove={() => onRemove(user)}
-            onLink={() => onLink(user)}
-          />
-        ))}
+        {users.map((user, i) => {
+          const isCurrentUser = isMember && user.id === auth.userId;
+
+          return (
+            <MemberRow
+              key={user.id}
+              user={user}
+              isCurrentUser={isCurrentUser}
+              isMember={isMember}
+              isLast={i === users.length - 1}
+              onEdit={() => onEdit(user)}
+              onRemove={() => onRemove(user)}
+              onLink={() => onLink(user)}
+            />
+          );
+        })}
       </div>
     </>
   );
@@ -168,20 +207,26 @@ function MemberList({
 
 function MemberRow({
   user,
-  isCurrentAdmin,
+  isCurrentUser,
+  isMember,
   isLast,
   onEdit,
   onRemove,
   onLink,
 }: {
   user: User;
-  isCurrentAdmin: boolean;
+  isCurrentUser: boolean;
+  isMember: boolean;
   isLast: boolean;
   onEdit: () => void;
   onRemove: () => void;
   onLink: () => void;
 }) {
   const initials = getInitials(user.name);
+  // Admin sees actions on all rows except their own "You" row.
+  // Member sees edit (no delete) only on their own row.
+  const showActions = isMember ? isCurrentUser : !isCurrentUser;
+  const showDelete = !isMember;
 
   return (
     <div className={`flex items-center gap-4 px-4 py-4 ${isLast ? "" : "border-b border-border"}`}>
@@ -191,7 +236,7 @@ function MemberRow({
 
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="truncate text-sm font-medium">{user.name}</span>
-        {isCurrentAdmin && (
+        {isCurrentUser && (
           <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
             You
           </Badge>
@@ -213,40 +258,48 @@ function MemberRow({
             activeColor="#25D366"
           />
           <ChannelBadge
-            icon={<EnvelopeSimpleIcon size={16} />}
+            icon={<EnvelopeIcon size={16} />}
             active={!!user.email}
-            tooltip={user.email ? `Email: ${user.email}` : "Email not set"}
-            activeColor="#6366F1"
+            tooltip={
+              user.email
+                ? user.email_verified_at
+                  ? "Email verified"
+                  : "Email pending verification"
+                : "Email not added"
+            }
+            activeColor={user.email ? (user.email_verified_at ? "#0072FC" : "#F59E0B") : "#0072FC"}
           />
         </div>
       </TooltipProvider>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="size-7">
-            <DotsThreeIcon size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={onLink}>
-            <LinkIcon size={14} className="mr-2" />
-            Link accounts
-          </DropdownMenuItem>
-          {!isCurrentAdmin && (
-            <>
-              <DropdownMenuItem onClick={onEdit}>
-                <PencilSimpleIcon size={14} className="mr-2" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive" onClick={onRemove}>
-                <UserMinusIcon size={14} className="mr-2" />
-                Remove member
-              </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {showActions && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="size-7">
+              <DotsThreeIcon size={16} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onLink}>
+              <LinkIcon size={14} className="mr-2" />
+              Link accounts
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onEdit}>
+              <PencilSimpleIcon size={14} className="mr-2" />
+              Edit
+            </DropdownMenuItem>
+            {showDelete && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="text-destructive" onClick={onRemove}>
+                  <UserMinusIcon size={14} className="mr-2" />
+                  Remove member
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }
@@ -366,15 +419,10 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
         <p className="mt-1" style={{ fontSize: 13, color: "rgba(255, 255, 255, 0.3)" }}>
           Add your first team member to get started.
         </p>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-white"
-          style={{ background: "#6b7dfa", borderRadius: 8, padding: "8px 16px", border: "none", cursor: "pointer" }}
-        >
+        <Button size="sm" onClick={onAdd} className="mt-4">
           <PlusIcon size={14} weight="bold" />
           Add member
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -416,14 +464,18 @@ function AddMemberDialog({
   const [error, setError] = useState("");
 
   const createMutation = useMutation({
-    mutationFn: () => {
-      const payload: Parameters<typeof api.users.create>[0] = { name: name.trim() };
-      if (email.trim()) payload.email = email.trim();
-      if (phone.trim()) payload.whatsappNumber = phone.trim();
-      return api.users.create(payload);
-    },
-    onSuccess: () => {
-      toast.success("Member added");
+    mutationFn: () =>
+      api.users.create({
+        name: name.trim(),
+        email: email.trim() || null,
+        whatsappNumber: phone.trim() || null,
+      }),
+    onSuccess: (data) => {
+      if (data.verificationSent) {
+        toast.success("Member added. Verification email sent.");
+      } else {
+        toast.success("Member added");
+      }
       resetAndClose();
       onSuccess();
     },
@@ -444,9 +496,11 @@ function AddMemberDialog({
     onOpenChange(false);
   };
 
-  const hasValidEmail = email.trim().length > 0 && email.includes("@");
-  const hasValidPhone = phone.trim().startsWith("+") && phone.trim().length >= 8;
-  const canSubmit = name.trim().length > 0 && (hasValidEmail || hasValidPhone);
+  const canSubmit = addMemberSchema.safeParse({
+    name: name.trim(),
+    email: email.trim(),
+    whatsappNumber: phone.trim(),
+  }).success;
 
   return (
     <Dialog
@@ -459,7 +513,7 @@ function AddMemberDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add member</DialogTitle>
-          <DialogDescription>Add a team member with their email or WhatsApp number.</DialogDescription>
+          <DialogDescription>Add a new team member. Name and email are required.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -527,10 +581,12 @@ function AddMemberDialog({
 
 function EditMemberDialog({
   user,
+  isMember,
   onOpenChange,
   onSuccess,
 }: {
   user: User | null;
+  isMember: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
 }) {
@@ -552,11 +608,15 @@ function EditMemberDialog({
     mutationFn: () =>
       api.users.update(user?.id ?? "", {
         name: name.trim(),
-        email: email.trim() || null,
+        ...(isMember ? {} : { email: email.trim() || null }),
         whatsappNumber: phone.trim() || null,
       }),
-    onSuccess: () => {
-      toast.success("Member updated");
+    onSuccess: (data) => {
+      if (data.verificationSent) {
+        toast.success("Member updated. Verification email sent.");
+      } else {
+        toast.success("Member updated");
+      }
       onSuccess();
     },
     onError: (err: Error) => {
@@ -568,6 +628,18 @@ function EditMemberDialog({
     },
   });
 
+  const resendMutation = useMutation({
+    mutationFn: () => api.users.resendVerification(user?.id ?? ""),
+    onSuccess: (data) => {
+      if (data.sent) {
+        toast.success("Verification email sent");
+      } else {
+        toast.success("Verification link logged to server console (SMTP not configured)");
+      }
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const isDirty =
     user &&
     (name.trim() !== user.name ||
@@ -575,9 +647,7 @@ function EditMemberDialog({
       (phone.trim() || null) !== (user.whatsapp_number ?? null));
   const canSubmit =
     isDirty &&
-    name.trim().length > 0 &&
-    (!email.trim() || email.includes("@")) &&
-    (!phone.trim() || (phone.trim().startsWith("+") && phone.trim().length >= 8));
+    editMemberSchema.safeParse({ name: name.trim(), email: email.trim(), whatsappNumber: phone.trim() }).success;
 
   return (
     <Dialog open={!!user} onOpenChange={onOpenChange}>
@@ -598,6 +668,42 @@ function EditMemberDialog({
             />
           </div>
 
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-email">Email</Label>
+            <Input
+              id="edit-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
+              disabled={updateMutation.isPending || isMember}
+            />
+            {isMember && <p className="text-xs text-muted-foreground">Contact your admin to change your email.</p>}
+            {user?.email && email === user.email && (
+              <div className="flex items-center gap-1.5">
+                {user.email_verified_at ? (
+                  <span className="flex items-center gap-1 text-xs text-green-600">
+                    <CheckCircleIcon size={14} weight="fill" />
+                    Verified
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-xs text-amber-600">
+                    <ClockIcon size={14} />
+                    Pending verification
+                    <button
+                      type="button"
+                      className="ml-1 text-xs underline hover:no-underline disabled:opacity-50"
+                      disabled={resendMutation.isPending}
+                      onClick={() => resendMutation.mutate()}
+                    >
+                      {resendMutation.isPending ? "Sending..." : "Resend"}
+                    </button>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
           {user?.slack_user_id && (
             <div className="space-y-1.5">
               <Label className="text-muted-foreground">Slack</Label>
@@ -607,21 +713,6 @@ function EditMemberDialog({
               </div>
             </div>
           )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-email">Email</Label>
-            <Input
-              id="edit-email"
-              type="email"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                setError("");
-              }}
-              placeholder="name@example.com"
-              disabled={updateMutation.isPending}
-            />
-          </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="edit-phone">WhatsApp number</Label>
@@ -722,7 +813,7 @@ function RemoveMemberDialog({
   );
 }
 
-/** Provider identity linking dialog — map a user to their accounts in connected integrations. */
+/** Provider identity linking dialog -- map a user to their accounts in connected integrations. */
 function LinkProviderDialog({
   user,
   onOpenChange,
@@ -968,12 +1059,4 @@ function getProviderIdPlaceholder(provider: string): string {
     default:
       return "Provider user ID";
   }
-}
-
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
-  return name.slice(0, 2).toUpperCase();
 }

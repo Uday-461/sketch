@@ -21,13 +21,12 @@ export const configSchema = z.object({
   MAX_FILE_SIZE_MB: z.coerce.number().default(20),
 
   // Server
-  DATA_DIR: z.string().default("./data"),
-  PORT: z.coerce.number().default(3000),
-  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
-
   // Public-facing base URL (used for OAuth redirect URIs, email links, etc.)
   // e.g. https://sketch.yourcompany.com — no trailing slash
   BASE_URL: z.string().optional(),
+  DATA_DIR: z.string().default("./data"),
+  PORT: z.coerce.number().default(3000),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
 export type Config = z.infer<typeof configSchema>;

@@ -1,3 +1,4 @@
+import AnthropicBedrock from "@anthropic-ai/bedrock-sdk";
 /**
  * Lightweight LLM client for enrichment tasks (tagging, summarization).
  *
@@ -8,20 +9,19 @@
  * Model defaults to Haiku for cost efficiency on structured extraction tasks.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import AnthropicBedrock from "@anthropic-ai/bedrock-sdk";
 
 const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 /** Bedrock uses a different model ID format. */
 const BEDROCK_MODEL = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
 
 export interface LlmCallOptions {
-	maxTokens?: number;
+  maxTokens?: number;
 }
 
 export interface LlmCallResult {
-	text: string;
-	inputTokens: number;
-	outputTokens: number;
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 export type LlmCallFn = (prompt: string, opts?: LlmCallOptions) => Promise<LlmCallResult>;
@@ -31,45 +31,45 @@ export type LlmCallFn = (prompt: string, opts?: LlmCallOptions) => Promise<LlmCa
  * Auto-detects Bedrock vs direct Anthropic API from environment.
  */
 export function createLlmCallFn(): LlmCallFn {
-	const useBedrock = process.env.CLAUDE_CODE_USE_BEDROCK === "1";
+  const useBedrock = process.env.CLAUDE_CODE_USE_BEDROCK === "1";
 
-	if (useBedrock) {
-		const client = new AnthropicBedrock({
-			awsAccessKey: process.env.AWS_ACCESS_KEY_ID!,
-			awsSecretKey: process.env.AWS_SECRET_ACCESS_KEY!,
-			awsRegion: process.env.AWS_REGION!,
-		});
+  if (useBedrock) {
+    const client = new AnthropicBedrock({
+      awsAccessKey: process.env.AWS_ACCESS_KEY_ID!,
+      awsSecretKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      awsRegion: process.env.AWS_REGION!,
+    });
 
-		return async (prompt: string, opts?: LlmCallOptions): Promise<LlmCallResult> => {
-			const response = await client.messages.create({
-				model: BEDROCK_MODEL,
-				max_tokens: opts?.maxTokens ?? 1024,
-				messages: [{ role: "user", content: prompt }],
-			});
+    return async (prompt: string, opts?: LlmCallOptions): Promise<LlmCallResult> => {
+      const response = await client.messages.create({
+        model: BEDROCK_MODEL,
+        max_tokens: opts?.maxTokens ?? 1024,
+        messages: [{ role: "user", content: prompt }],
+      });
 
-			const textBlock = response.content.find((b) => b.type === "text");
-			return {
-				text: textBlock?.text ?? "{}",
-				inputTokens: response.usage.input_tokens,
-				outputTokens: response.usage.output_tokens,
-			};
-		};
-	}
+      const textBlock = response.content.find((b) => b.type === "text");
+      return {
+        text: textBlock?.text ?? "{}",
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      };
+    };
+  }
 
-	const client = new Anthropic();
+  const client = new Anthropic();
 
-	return async (prompt: string, opts?: LlmCallOptions): Promise<LlmCallResult> => {
-		const response = await client.messages.create({
-			model: DEFAULT_MODEL,
-			max_tokens: opts?.maxTokens ?? 1024,
-			messages: [{ role: "user", content: prompt }],
-		});
+  return async (prompt: string, opts?: LlmCallOptions): Promise<LlmCallResult> => {
+    const response = await client.messages.create({
+      model: DEFAULT_MODEL,
+      max_tokens: opts?.maxTokens ?? 1024,
+      messages: [{ role: "user", content: prompt }],
+    });
 
-		const textBlock = response.content.find((b) => b.type === "text");
-		return {
-			text: textBlock?.text ?? "{}",
-			inputTokens: response.usage.input_tokens,
-			outputTokens: response.usage.output_tokens,
-		};
-	};
+    const textBlock = response.content.find((b) => b.type === "text");
+    return {
+      text: textBlock?.text ?? "{}",
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+    };
+  };
 }

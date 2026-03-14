@@ -1,14 +1,14 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/sketch.png" />
-    <source media="(prefers-color-scheme: light)" srcset="assets/sketch-dark.png" />
-    <img alt="Sketch" src="assets/sketch-dark.png" width="120" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/canvasxai/sketch/main/assets/sketch.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/canvasxai/sketch/main/assets/sketch-dark.svg" />
+    <img alt="Sketch" src="https://raw.githubusercontent.com/canvasxai/sketch/main/assets/sketch-dark.svg" width="120" />
   </picture>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="MIT License" /></a>
-  <img src="https://img.shields.io/badge/version-0.7.1-green?style=for-the-badge" alt="v0.7.1" />
+  <img src="https://img.shields.io/github/v/tag/canvasxai/sketch?style=for-the-badge&label=version&color=green" alt="version" />
   <img src="https://img.shields.io/badge/node-24%2B-brightgreen?style=for-the-badge" alt="Node 24+" />
   <a href="https://github.com/canvasxai/sketch/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/canvasxai/sketch/ci.yml?style=for-the-badge&label=CI" alt="CI" /></a>
   <a href="https://github.com/canvasxai/sketch/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=for-the-badge" alt="PRs Welcome" /></a>

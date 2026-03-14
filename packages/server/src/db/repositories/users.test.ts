@@ -60,9 +60,43 @@ describe("create()", () => {
     expect(user.whatsapp_number).toBe("+14155551234");
   });
 
+  it("creates user with email", async () => {
+    const user = await users.create({ name: "Alice Email", slackUserId: "U200", email: "alice@example.com" });
+    expect(user.email).toBe("alice@example.com");
+  });
+
+  it("creates user with null email when not provided", async () => {
+    const user = await users.create({ name: "Bob No Email", slackUserId: "U201" });
+    expect(user.email).toBeNull();
+  });
+
+  it("creates user with email and whatsappNumber", async () => {
+    const user = await users.create({
+      name: "Charlie Full",
+      whatsappNumber: "+14155559999",
+      email: "charlie@example.com",
+    });
+    expect(user.whatsapp_number).toBe("+14155559999");
+    expect(user.email).toBe("charlie@example.com");
+  });
+
   it("duplicate whatsapp_number throws", async () => {
     await users.create({ name: "Noah", whatsappNumber: "+14155559999" });
     await expect(users.create({ name: "Olivia", whatsappNumber: "+14155559999" })).rejects.toThrow();
+  });
+});
+
+describe("findByEmail()", () => {
+  it("returns user when found", async () => {
+    const created = await users.create({ name: "Zoe", email: "zoe@example.com" });
+    const found = await users.findByEmail("zoe@example.com");
+    expect(found).toBeDefined();
+    expect(found?.id).toBe(created.id);
+  });
+
+  it("returns undefined when not found", async () => {
+    const found = await users.findByEmail("nobody@example.com");
+    expect(found).toBeUndefined();
   });
 });
 
@@ -159,6 +193,34 @@ describe("update()", () => {
     await users.create({ name: "Grace", whatsappNumber: "+14155550001" });
     const other = await users.create({ name: "Hank", whatsappNumber: "+14155550002" });
     await expect(users.update(other.id, { whatsappNumber: "+14155550001" })).rejects.toThrow();
+  });
+
+  it("updates email", async () => {
+    const created = await users.create({ name: "Dave", slackUserId: "U014" });
+    const updated = await users.update(created.id, { email: "dave@example.com" });
+    expect(updated.email).toBe("dave@example.com");
+    expect(updated.name).toBe("Dave");
+  });
+
+  it("clears email when set to null", async () => {
+    const created = await users.create({ name: "Eve", slackUserId: "U015" });
+    await users.update(created.id, { email: "eve@example.com" });
+    const updated = await users.update(created.id, { email: null });
+    expect(updated.email).toBeNull();
+  });
+
+  it("updates email and name together", async () => {
+    const created = await users.create({ name: "Frank", slackUserId: "U016" });
+    const updated = await users.update(created.id, { name: "Franklin", email: "frank@example.com" });
+    expect(updated.name).toBe("Franklin");
+    expect(updated.email).toBe("frank@example.com");
+  });
+
+  it("updates slack_user_id", async () => {
+    const created = await users.create({ name: "Wendy", email: "wendy@example.com" });
+    expect(created.slack_user_id).toBeNull();
+    const updated = await users.update(created.id, { slackUserId: "U999" });
+    expect(updated.slack_user_id).toBe("U999");
   });
 
   it("returns unchanged user when no fields provided", async () => {

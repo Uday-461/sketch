@@ -153,9 +153,10 @@ export function buildTaggingPrompt(
   if (fileContext?.siblingFileNames && fileContext.siblingFileNames.length > 0) {
     contextLines.push(`Other files in same folder: ${fileContext.siblingFileNames.join(", ")}`);
   }
-  const contextBlock = contextLines.length > 0
-    ? `\nContext (use this to understand what the document means to the team):\n${contextLines.join("\n")}\n`
-    : "";
+  const contextBlock =
+    contextLines.length > 0
+      ? `\nContext (use this to understand what the document means to the team):\n${contextLines.join("\n")}\n`
+      : "";
 
   return `Extract metadata from this document "${fileName}". Focus on information that a keyword search CANNOT find.
 ${contextBlock}

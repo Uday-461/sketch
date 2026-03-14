@@ -1,3 +1,9 @@
+/**
+ * Connectors and indexed files infrastructure.
+ *
+ * Creates connector_configs, indexed_files (with enrichment + embedding columns),
+ * and FTS5 full-text search with triggers.
+ */
 import { type Kysely, sql } from "kysely";
 
 export async function up(db: Kysely<unknown>): Promise<void> {
@@ -8,7 +14,6 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn("auth_type", "text", (col) => col.notNull()) // 'oauth', 'api_key', 'integration_token'
     .addColumn("credentials", "text", (col) => col.notNull()) // encrypted JSON blob
     .addColumn("scope_config", "text", (col) => col.notNull().defaultTo("{}")) // JSON: folders, spaces, etc.
-    .addColumn("team_access", "text") // JSON: team IDs that can see this connector's files
     .addColumn("sync_status", "text", (col) => col.notNull().defaultTo("pending")) // pending, active, syncing, paused, error
     .addColumn("sync_cursor", "text") // provider-specific sync token
     .addColumn("last_synced_at", "text")
@@ -40,6 +45,11 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn("source_updated_at", "text")
     .addColumn("synced_at", "text", (col) => col.notNull())
     .addColumn("indexed_at", "text", (col) => col.notNull().defaultTo(sql`CURRENT_TIMESTAMP`))
+    .addColumn("context_note", "text")
+    .addColumn("enrichment_status", "text", (col) => col.notNull().defaultTo("raw"))
+    .addColumn("access_scope_id", "text")
+    .addColumn("mime_type", "text")
+    .addColumn("embedding_status", "text", (col) => col.defaultTo("pending"))
     .execute();
 
   // Indexes for common queries
@@ -57,13 +67,14 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 
   await db.schema.createIndex("idx_indexed_files_not_archived").on("indexed_files").columns(["is_archived"]).execute();
 
-  // FTS5 virtual table for full-text search over file name, summary, and tags
+  // FTS5 virtual table for full-text search over file name, summary, tags, source, and source_path
   await sql`
 		CREATE VIRTUAL TABLE indexed_files_fts USING fts5(
 			file_name,
 			summary,
 			tags,
 			source,
+			source_path,
 			content='indexed_files',
 			content_rowid='rowid'
 		)
@@ -72,24 +83,24 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   // Triggers to keep FTS5 in sync with indexed_files
   await sql`
 		CREATE TRIGGER indexed_files_ai AFTER INSERT ON indexed_files BEGIN
-			INSERT INTO indexed_files_fts(rowid, file_name, summary, tags, source)
-			VALUES (new.rowid, new.file_name, new.summary, new.tags, new.source);
+			INSERT INTO indexed_files_fts(rowid, file_name, summary, tags, source, source_path)
+			VALUES (new.rowid, new.file_name, new.summary, new.tags, new.source, new.source_path);
 		END
 	`.execute(db);
 
   await sql`
 		CREATE TRIGGER indexed_files_ad AFTER DELETE ON indexed_files BEGIN
-			INSERT INTO indexed_files_fts(indexed_files_fts, rowid, file_name, summary, tags, source)
-			VALUES ('delete', old.rowid, old.file_name, old.summary, old.tags, old.source);
+			INSERT INTO indexed_files_fts(indexed_files_fts, rowid, file_name, summary, tags, source, source_path)
+			VALUES ('delete', old.rowid, old.file_name, old.summary, old.tags, old.source, old.source_path);
 		END
 	`.execute(db);
 
   await sql`
 		CREATE TRIGGER indexed_files_au AFTER UPDATE ON indexed_files BEGIN
-			INSERT INTO indexed_files_fts(indexed_files_fts, rowid, file_name, summary, tags, source)
-			VALUES ('delete', old.rowid, old.file_name, old.summary, old.tags, old.source);
-			INSERT INTO indexed_files_fts(rowid, file_name, summary, tags, source)
-			VALUES (new.rowid, new.file_name, new.summary, new.tags, new.source);
+			INSERT INTO indexed_files_fts(indexed_files_fts, rowid, file_name, summary, tags, source, source_path)
+			VALUES ('delete', old.rowid, old.file_name, old.summary, old.tags, old.source, old.source_path);
+			INSERT INTO indexed_files_fts(rowid, file_name, summary, tags, source, source_path)
+			VALUES (new.rowid, new.file_name, new.summary, new.tags, new.source, new.source_path);
 		END
 	`.execute(db);
 }

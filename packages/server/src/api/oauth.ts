@@ -64,10 +64,10 @@ export function oauthRoutes(
     const config = await settings.get();
     const token = getCookie(c, SESSION_COOKIE);
     const payload = token && config?.jwt_secret ? await verifyJwt(token, config.jwt_secret) : null;
-    if (!payload?.email) {
+    if (!payload?.sub) {
       return c.json({ error: { code: "UNAUTHORIZED", message: "Authentication required" } }, 401);
     }
-    const email = payload.email;
+    const email = payload.sub;
 
     let user = await users.findByEmail(email);
     if (!user) {

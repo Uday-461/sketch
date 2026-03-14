@@ -17,6 +17,7 @@ import {
   isSkillEnabled,
 } from "@/lib/skills-data";
 import { cn } from "@/lib/utils";
+import { useDashboardAuth } from "@/routes/dashboard";
 import { PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute } from "@tanstack/react-router";
@@ -165,7 +166,8 @@ export function SkillsPage() {
   });
 
   // ── Derived data ──────────────────────────────────────────
-  const isAdmin = true;
+  const auth = useDashboardAuth();
+  const isAdmin = auth.role === "admin";
 
   // TODO: Switch the active tab to per-user visibility once viewer identity is available
   // by using `isSkillActiveForUser` and `getSkillSourcesForUser`.
@@ -489,6 +491,7 @@ export function SkillsPage() {
               <SkillCard
                 key={skill.id}
                 skill={skill}
+                isAdmin={isAdmin}
                 onCardClick={handleCardClick}
                 onDuplicate={handleDuplicate}
                 onDelete={handleDeleteClick}

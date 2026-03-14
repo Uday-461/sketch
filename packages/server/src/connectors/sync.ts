@@ -311,7 +311,10 @@ export function startSyncScheduler(
         // Clear all chunks and timeframes
         await db.deleteFrom("document_chunks").execute();
         await db.deleteFrom("document_timeframes").execute();
-        logger.info({ reset: Number(resetCount.numUpdatedRows) }, "Reset files for re-enrichment (cleared tags, summaries, chunks)");
+        logger.info(
+          { reset: Number(resetCount.numUpdatedRows) },
+          "Reset files for re-enrichment (cleared tags, summaries, chunks)",
+        );
       }
 
       const settings = await db

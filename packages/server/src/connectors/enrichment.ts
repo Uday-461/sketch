@@ -146,9 +146,8 @@ export async function runEnrichment(deps: EnrichmentDeps): Promise<EnrichmentRes
           fileName: file.file_name,
           progress: `${idx + 1}/${pendingFiles.length}`,
           elapsed: `${elapsed}s`,
-          tokens: fileInputTokens + fileOutputTokens > 0
-            ? { input: fileInputTokens, output: fileOutputTokens }
-            : undefined,
+          tokens:
+            fileInputTokens + fileOutputTokens > 0 ? { input: fileInputTokens, output: fileOutputTokens } : undefined,
         },
         "Enriched file",
       );

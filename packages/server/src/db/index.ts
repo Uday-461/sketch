@@ -22,9 +22,9 @@ export function createDatabase(config: Config): Kysely<DB> {
   // they require the sqlite-vec extension. Drop and recreate if dimensions changed.
   for (const table of ["chunk_embeddings", "file_embeddings"] as const) {
     const pk = table === "chunk_embeddings" ? "chunk_id" : "indexed_file_id";
-    const existingDef = sqlite
-      .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?")
-      .get(table) as { sql: string } | undefined;
+    const existingDef = sqlite.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(table) as
+      | { sql: string }
+      | undefined;
 
     if (existingDef) {
       // Check if dimensions match by inspecting the CREATE statement (e.g. "float[3072]")
@@ -32,7 +32,9 @@ export function createDatabase(config: Config): Kysely<DB> {
       if (dimMatch && Number(dimMatch[1]) !== EMBEDDING_DIMENSIONS) {
         sqlite.exec(`DROP TABLE ${table}`);
         // Reset embedding status so enrichment re-runs with new dimensions
-        sqlite.exec(`UPDATE indexed_files SET embedding_status = 'pending' WHERE embedding_status IN ('done', 'processing')`);
+        sqlite.exec(
+          `UPDATE indexed_files SET embedding_status = 'pending' WHERE embedding_status IN ('done', 'processing')`,
+        );
       } else {
         continue; // Table exists with correct dimensions
       }

@@ -27,7 +27,7 @@ import type { Kysely } from "kysely";
 import type { DB } from "../db/schema";
 import type { Logger } from "../logger";
 import { createDbAuthState } from "./auth-store";
-import { chunkText } from "./chunking";
+import { WHATSAPP_TEXT_LIMIT, chunkText } from "./chunking";
 
 const ECHO_TTL_MS = 60_000;
 const COMPOSING_INTERVAL_MS = 5_000;
@@ -83,11 +83,15 @@ export interface PairingCallbacks {
 export interface WhatsAppBotConfig {
   db: Kysely<DB>;
   logger: Logger;
+  groupMetadataStore?: {
+    upsert: (group: { jid: string; name: string; description: string | null; updated_at: string }) => Promise<unknown>;
+  };
 }
 
 export class WhatsAppBot {
   private db: Kysely<DB>;
   private logger: Logger;
+  private groupMetadataStore?: WhatsAppBotConfig["groupMetadataStore"];
   private sock: WASocket | null = null;
   private handler: WhatsAppMessageHandler | null = null;
   private recentlySent = new Set<string>();
@@ -104,6 +108,7 @@ export class WhatsAppBot {
   constructor(config: WhatsAppBotConfig) {
     this.db = config.db;
     this.logger = config.logger;
+    this.groupMetadataStore = config.groupMetadataStore;
   }
 
   onMessage(handler: WhatsAppMessageHandler): void {
@@ -157,6 +162,7 @@ export class WhatsAppBot {
     });
 
     this.sock.ev.on("creds.update", authState.saveCreds);
+    this.registerGroupEventHandlers();
 
     return new Promise<void>((resolve) => {
       this.sock?.ev.on("connection.update", async (update) => {
@@ -277,7 +283,7 @@ export class WhatsAppBot {
 
   async sendText(jid: string, text: string, options?: MiscMessageGenerationOptions): Promise<void> {
     if (!this.sock) return;
-    const chunks = chunkText(text);
+    const chunks = chunkText(text, WHATSAPP_TEXT_LIMIT);
     for (let i = 0; i < chunks.length; i++) {
       // Only apply options (e.g. quoted reply) to the first chunk
       const sent = await this.sock.sendMessage(jid, { text: chunks[i] }, i === 0 ? options : undefined);
@@ -336,16 +342,7 @@ export class WhatsAppBot {
     const cached = this.groupMetaCache.get(groupJid);
     if (cached && cached.expires > Date.now()) return cached.meta;
 
-    try {
-      const meta = await this.sock?.groupMetadata(groupJid);
-      if (meta) {
-        this.groupMetaCache.set(groupJid, { meta, expires: Date.now() + GROUP_META_TTL_MS });
-      }
-      return meta;
-    } catch (err) {
-      this.logger.warn({ err, groupJid }, "Failed to fetch group metadata");
-      return undefined;
-    }
+    return this.refreshGroupMetadata(groupJid);
   }
 
   async getGroupName(groupJid: string): Promise<string> {
@@ -556,27 +553,32 @@ export class WhatsAppBot {
     this.sock?.ev.on("groups.update", async (updates) => {
       for (const update of updates) {
         if (!update.id) continue;
-        try {
-          const meta = await this.sock?.groupMetadata(update.id);
-          if (meta) {
-            this.groupMetaCache.set(update.id, { meta, expires: Date.now() + GROUP_META_TTL_MS });
-          }
-        } catch {
-          // Non-critical — cache will refresh on next access
-        }
+        await this.refreshGroupMetadata(update.id);
       }
     });
 
     this.sock?.ev.on("group-participants.update", async (event) => {
-      try {
-        const meta = await this.sock?.groupMetadata(event.id);
-        if (meta) {
-          this.groupMetaCache.set(event.id, { meta, expires: Date.now() + GROUP_META_TTL_MS });
-        }
-      } catch {
-        // Non-critical — cache will refresh on next access
-      }
+      await this.refreshGroupMetadata(event.id);
     });
+  }
+
+  private async refreshGroupMetadata(groupJid: string): Promise<GroupMetadata | undefined> {
+    try {
+      const meta = await this.sock?.groupMetadata(groupJid);
+      if (meta) {
+        this.groupMetaCache.set(groupJid, { meta, expires: Date.now() + GROUP_META_TTL_MS });
+        await this.groupMetadataStore?.upsert({
+          jid: groupJid,
+          name: meta.subject ?? "Unknown Group",
+          description: meta.desc ?? null,
+          updated_at: new Date().toISOString(),
+        });
+      }
+      return meta;
+    } catch (err) {
+      this.logger.warn({ err, groupJid }, "Failed to fetch group metadata");
+      return undefined;
+    }
   }
 
   /**

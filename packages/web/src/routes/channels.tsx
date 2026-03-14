@@ -34,11 +34,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { WhatsAppQR } from "@/components/whatsapp-qr";
 import type { ChannelStatus } from "@/lib/api";
 import { api } from "@/lib/api";
+import { generateSlackManifest } from "@/lib/slack-manifest";
+import { useDashboardAuth } from "@/routes/dashboard";
 import {
   ArrowSquareOutIcon,
   CheckIcon,
   CopySimpleIcon,
   DotsThreeIcon,
+  EnvelopeIcon,
   EnvelopeSimpleIcon,
   SlackLogoIcon,
   SpinnerGapIcon,
@@ -58,6 +61,8 @@ export const channelsRoute = createRoute({
 });
 
 export function ChannelsPage() {
+  const auth = useDashboardAuth();
+  const readOnly = auth.role === "member";
   const { data, isLoading } = useQuery({
     queryKey: ["channels", "status"],
     queryFn: () => api.channels.status(),
@@ -87,24 +92,24 @@ export function ChannelsPage() {
             <Skeleton className="h-32 rounded-lg" />
           </>
         ) : (
-          data?.channels.map((channel) => <PlatformCard key={channel.platform} channel={channel} />)
+          data?.channels.map((channel) => <PlatformCard key={channel.platform} channel={channel} readOnly={readOnly} />)
         )}
       </div>
     </div>
   );
 }
 
-function PlatformCard({ channel }: { channel: ChannelStatus }) {
+function PlatformCard({ channel, readOnly }: { channel: ChannelStatus; readOnly: boolean }) {
   if (channel.platform === "slack") {
-    return <SlackCard channel={channel} />;
+    return <SlackCard channel={channel} readOnly={readOnly} />;
   }
   if (channel.platform === "email") {
-    return <EmailCard channel={channel} />;
+    return <EmailCard channel={channel} readOnly={readOnly} />;
   }
-  return <WhatsAppCard channel={channel} />;
+  return <WhatsAppCard channel={channel} readOnly={readOnly} />;
 }
 
-function SlackCard({ channel }: { channel: ChannelStatus }) {
+function SlackCard({ channel, readOnly }: { channel: ChannelStatus; readOnly: boolean }) {
   const queryClient = useQueryClient();
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
@@ -145,27 +150,29 @@ function SlackCard({ channel }: { channel: ChannelStatus }) {
             </div>
             <span className="text-sm font-medium">Slack</span>
           </div>
-          <div className="flex items-center gap-2">
-            {!isConfigured && (
-              <Button variant="outline" size="sm" onClick={() => setShowConnectDialog(true)}>
-                Connect
-              </Button>
-            )}
-            {isConfigured && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="size-7">
-                    <DotsThreeIcon size={16} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem className="text-destructive" onClick={() => setShowDisconnectDialog(true)}>
-                    Disconnect
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
+          {!readOnly && (
+            <div className="flex items-center gap-2">
+              {!isConfigured && (
+                <Button variant="outline" size="sm" onClick={() => setShowConnectDialog(true)}>
+                  Connect
+                </Button>
+              )}
+              {isConfigured && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="size-7">
+                      <DotsThreeIcon size={16} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem className="text-destructive" onClick={() => setShowDisconnectDialog(true)}>
+                      Disconnect
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="ml-12 mt-2">
@@ -206,7 +213,7 @@ function SlackCard({ channel }: { channel: ChannelStatus }) {
   );
 }
 
-function WhatsAppCard({ channel }: { channel: ChannelStatus }) {
+function WhatsAppCard({ channel, readOnly }: { channel: ChannelStatus; readOnly: boolean }) {
   const queryClient = useQueryClient();
   const [showPairDialog, setShowPairDialog] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
@@ -246,27 +253,29 @@ function WhatsAppCard({ channel }: { channel: ChannelStatus }) {
             </div>
             <span className="text-sm font-medium">WhatsApp</span>
           </div>
-          <div className="flex items-center gap-2">
-            {!isConnected && (
-              <Button variant="outline" size="sm" onClick={() => setShowPairDialog(true)}>
-                Pair
-              </Button>
-            )}
-            {isConnected && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="size-7">
-                    <DotsThreeIcon size={16} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem className="text-destructive" onClick={() => setShowDisconnectDialog(true)}>
-                    Disconnect
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
+          {!readOnly && (
+            <div className="flex items-center gap-2">
+              {!isConnected && (
+                <Button variant="outline" size="sm" onClick={() => setShowPairDialog(true)}>
+                  Pair
+                </Button>
+              )}
+              {isConnected && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="size-7">
+                      <DotsThreeIcon size={16} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem className="text-destructive" onClick={() => setShowDisconnectDialog(true)}>
+                      Disconnect
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="ml-12 mt-2">
@@ -334,7 +343,7 @@ function WhatsAppPairDialog({
   );
 }
 
-function EmailCard({ channel }: { channel: ChannelStatus }) {
+function EmailCard({ channel, readOnly }: { channel: ChannelStatus; readOnly: boolean }) {
   const queryClient = useQueryClient();
   const [showConfigDialog, setShowConfigDialog] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
@@ -344,15 +353,15 @@ function EmailCard({ channel }: { channel: ChannelStatus }) {
 
   const handleConfigured = () => {
     setShowConfigDialog(false);
-    toast.success("Email configured.");
+    toast.success("Email SMTP configured.");
     queryClient.invalidateQueries({ queryKey: ["channels", "status"] });
   };
 
   const handleDisconnect = async () => {
     setIsDisconnecting(true);
     try {
-      await api.email.disconnect();
-      toast.success("Email disconnected.");
+      await api.channels.deleteEmail();
+      toast.success("Email SMTP disconnected.");
       queryClient.invalidateQueries({ queryKey: ["channels", "status"] });
     } catch {
       toast.error("Failed to disconnect email.");
@@ -370,45 +379,52 @@ function EmailCard({ channel }: { channel: ChannelStatus }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex size-9 items-center justify-center rounded-full bg-muted">
-              <EnvelopeSimpleIcon size={20} />
+              <EnvelopeIcon size={20} />
             </div>
-            <span className="text-sm font-medium">Email</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Email</span>
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                Outbound only
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            {!isConfigured && (
-              <Button variant="outline" size="sm" onClick={() => setShowConfigDialog(true)}>
-                Configure
-              </Button>
-            )}
-            {isConfigured && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="size-7">
-                    <DotsThreeIcon size={16} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setShowConfigDialog(true)}>Reconfigure</DropdownMenuItem>
-                  <DropdownMenuItem className="text-destructive" onClick={() => setShowDisconnectDialog(true)}>
-                    Disconnect
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
+          {!readOnly && (
+            <div className="flex items-center gap-2">
+              {!isConfigured && (
+                <Button variant="outline" size="sm" onClick={() => setShowConfigDialog(true)}>
+                  Configure
+                </Button>
+              )}
+              {isConfigured && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="size-7">
+                      <DotsThreeIcon size={16} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => setShowConfigDialog(true)}>Reconfigure</DropdownMenuItem>
+                    <DropdownMenuItem className="text-destructive" onClick={() => setShowDisconnectDialog(true)}>
+                      Disconnect
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="ml-12 mt-2">
           {isConfigured ? (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <CheckIcon size={14} className="text-success" />
-              <span>Configured{channel.fromAddress ? ` — ${channel.fromAddress}` : ""}</span>
+              <span>SMTP configured</span>
             </div>
           ) : (
             <>
               <p className="text-sm text-muted-foreground">Not configured</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Configure SMTP to send verification codes and magic links
+                Configure SMTP to send verification emails to your team
               </p>
             </>
           )}
@@ -422,8 +438,7 @@ function EmailCard({ channel }: { channel: ChannelStatus }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect Email?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove the SMTP configuration. Verification codes and magic links will no longer be sent via
-              email.
+              This will remove the SMTP configuration. Verification emails will no longer be sent.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -447,84 +462,105 @@ function EmailConfigDialog({
   onOpenChange: (open: boolean) => void;
   onConfigured: () => void;
 }) {
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState("587");
+  const [host, setHost] = useState("smtp.gmail.com");
+  const [port, setPort] = useState("465");
   const [user, setUser] = useState("");
-  const [pass, setPass] = useState("");
+  const [password, setPassword] = useState("");
   const [from, setFrom] = useState("");
-  const [secure, setSecure] = useState(true);
 
-  const configureMutation = useMutation({
+  const testMutation = useMutation({
     mutationFn: () =>
-      api.email.configure({
-        host: host.trim(),
-        port: Number(port),
-        user: user.trim(),
-        pass: pass.trim(),
-        from: from.trim(),
-        secure,
-      }),
-    onSuccess: () => {
-      resetForm();
-      onConfigured();
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
+      api.channels.testEmail({ host: host.trim(), port: Number(port), user: user.trim(), password, from: from.trim() }),
+    onSuccess: () => toast.success("SMTP connection successful!"),
+    onError: (err: Error) => toast.error(err.message),
   });
 
-  const resetForm = () => {
-    setHost("");
-    setPort("587");
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      api.channels.saveEmail({ host: host.trim(), port: Number(port), user: user.trim(), password, from: from.trim() }),
+    onSuccess: () => {
+      resetFields();
+      onConfigured();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const resetFields = () => {
+    setHost("smtp.gmail.com");
+    setPort("465");
     setUser("");
-    setPass("");
+    setPassword("");
     setFrom("");
-    setSecure(true);
   };
 
   const handleOpenChange = (next: boolean) => {
-    if (!next) resetForm();
+    if (!next) resetFields();
     onOpenChange(next);
   };
 
-  const canSubmit = host.trim() && port && user.trim() && pass.trim() && from.trim();
+  const isValid = host.trim() && port && user.trim() && password && from.trim();
+  const isPending = testMutation.isPending || saveMutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Configure Email (SMTP)</DialogTitle>
-          <DialogDescription>Enter your SMTP credentials. Connection will be verified before saving.</DialogDescription>
+          <DialogTitle>Configure Email SMTP</DialogTitle>
+          <DialogDescription>Enter your SMTP server details to send verification emails.</DialogDescription>
         </DialogHeader>
 
+        <div className="rounded-md border border-border bg-muted/30 p-3">
+          <p className="mb-2 text-xs font-medium">Gmail App Password setup</p>
+          <ol className="list-inside list-decimal space-y-1.5 text-xs text-muted-foreground">
+            <li>Go to Google Account &rarr; Security</li>
+            <li>Enable 2-Step Verification if not already on</li>
+            <li>Go to App Passwords (search &ldquo;App Passwords&rdquo; in account settings)</li>
+            <li>Enter a name (e.g. &ldquo;Sketch&rdquo;) and click Create</li>
+            <li>Copy the 16-character password &mdash; Google won&rsquo;t show it again</li>
+            <li>Paste it in the Password field below</li>
+          </ol>
+          <div className="mt-2.5 flex items-center gap-1">
+            <Button variant="ghost" size="sm" asChild>
+              <a href="https://myaccount.google.com/signinoptions/twosv" target="_blank" rel="noopener noreferrer">
+                Enable 2-Step Verification
+                <ArrowSquareOutIcon className="size-3.5" />
+              </a>
+            </Button>
+            <Button variant="ghost" size="sm" asChild>
+              <a href="https://myaccount.google.com/u/1/apppasswords" target="_blank" rel="noopener noreferrer">
+                App Passwords
+                <ArrowSquareOutIcon className="size-3.5" />
+              </a>
+            </Button>
+          </div>
+        </div>
+
         <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="col-span-2 space-y-1.5">
-              <Label htmlFor="smtp-host" className="text-xs">
-                SMTP Host
-              </Label>
-              <Input
-                id="smtp-host"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                placeholder="smtp.gmail.com"
-                disabled={configureMutation.isPending}
-                className="text-xs"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="smtp-port" className="text-xs">
-                Port
-              </Label>
-              <Input
-                id="smtp-port"
-                value={port}
-                onChange={(e) => setPort(e.target.value)}
-                placeholder="587"
-                disabled={configureMutation.isPending}
-                className="text-xs"
-              />
-            </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="smtp-host" className="text-xs">
+              SMTP Host
+            </Label>
+            <Input
+              id="smtp-host"
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+              placeholder="smtp.gmail.com"
+              disabled={isPending}
+              className="font-mono text-xs"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="smtp-port" className="text-xs">
+              Port
+            </Label>
+            <Input
+              id="smtp-port"
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+              placeholder="587"
+              disabled={isPending}
+              className="font-mono text-xs"
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="smtp-user" className="text-xs">
@@ -534,70 +570,62 @@ function EmailConfigDialog({
               id="smtp-user"
               value={user}
               onChange={(e) => setUser(e.target.value)}
-              placeholder="user@example.com"
-              disabled={configureMutation.isPending}
-              className="text-xs"
+              placeholder="you@gmail.com"
+              disabled={isPending}
+              className="font-mono text-xs"
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="smtp-pass" className="text-xs">
+            <Label htmlFor="smtp-password" className="text-xs">
               Password
             </Label>
             <Input
-              id="smtp-pass"
+              id="smtp-password"
               type="password"
-              value={pass}
-              onChange={(e) => setPass(e.target.value)}
-              placeholder="App password or SMTP password"
-              disabled={configureMutation.isPending}
-              className="text-xs"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="App password"
+              disabled={isPending}
+              className="font-mono text-xs"
             />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="smtp-from" className="text-xs">
-              From Address
+              From address
             </Label>
             <Input
               id="smtp-from"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
-              placeholder="sketch@yourcompany.com"
-              disabled={configureMutation.isPending}
-              className="text-xs"
+              placeholder="noreply@yourcompany.com"
+              disabled={isPending}
+              className="font-mono text-xs"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="smtp-secure"
-              checked={secure}
-              onChange={(e) => setSecure(e.target.checked)}
-              disabled={configureMutation.isPending}
-              className="size-3.5 rounded border-border"
-            />
-            <Label htmlFor="smtp-secure" className="text-xs font-normal text-muted-foreground">
-              Use TLS/SSL (recommended)
-            </Label>
+
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={() => testMutation.mutate()} disabled={!isValid || isPending}>
+              {testMutation.isPending ? (
+                <>
+                  <SpinnerGapIcon className="size-3.5 animate-spin" />
+                  Testing...
+                </>
+              ) : (
+                "Test Connection"
+              )}
+            </Button>
+            <Button size="sm" onClick={() => saveMutation.mutate()} disabled={!isValid || isPending}>
+              {saveMutation.isPending ? (
+                <>
+                  <SpinnerGapIcon className="size-3.5 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save"
+              )}
+            </Button>
           </div>
         </div>
-
-        <DialogFooter>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => configureMutation.mutate()}
-            disabled={!canSubmit || configureMutation.isPending}
-          >
-            {configureMutation.isPending ? (
-              <>
-                <SpinnerGapIcon className="size-3.5 animate-spin" />
-                Verifying...
-              </>
-            ) : (
-              "Connect"
-            )}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -632,51 +660,8 @@ function SlackConnectDialog({
   });
 
   const handleCopyManifest = useCallback(async () => {
-    const manifest = JSON.stringify(
-      {
-        display_information: { name: "Sketch" },
-        features: {
-          bot_user: { display_name: "Sketch", always_online: true },
-        },
-        oauth_config: {
-          scopes: {
-            bot: [
-              "app_mentions:read",
-              "channels:history",
-              "channels:read",
-              "chat:write",
-              "groups:history",
-              "groups:read",
-              "im:history",
-              "im:read",
-              "im:write",
-              "mpim:history",
-              "mpim:read",
-              "reactions:read",
-              "reactions:write",
-              "team:read",
-              "users:read",
-              "files:read",
-              "files:write",
-            ],
-          },
-        },
-        settings: {
-          event_subscriptions: {
-            bot_events: ["app_mention", "message.channels", "message.groups", "message.im", "message.mpim"],
-          },
-          interactivity: { is_enabled: true },
-          org_deploy_enabled: false,
-          socket_mode_enabled: true,
-          token_rotation_enabled: false,
-        },
-      },
-      null,
-      2,
-    );
-
     try {
-      await navigator.clipboard.writeText(manifest);
+      await navigator.clipboard.writeText(generateSlackManifest());
       setManifestCopied(true);
       toast.success("Slack manifest copied to clipboard.");
       setTimeout(() => setManifestCopied(false), 2000);

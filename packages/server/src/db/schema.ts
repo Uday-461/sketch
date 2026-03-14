@@ -4,6 +4,7 @@ export interface UsersTable {
   id: string;
   name: string;
   email: string | null;
+  email_verified_at: string | null;
   slack_user_id: string | null;
   whatsapp_number: string | null;
   created_at: Generated<string>;
@@ -29,6 +30,13 @@ export interface WhatsAppKeysTable {
   value: string;
 }
 
+export interface WhatsAppGroupsTable {
+  jid: string;
+  name: string;
+  description: string | null;
+  updated_at: Generated<string>;
+}
+
 export interface SettingsTable {
   id: string;
   admin_email: string | null;
@@ -46,7 +54,7 @@ export interface SettingsTable {
   smtp_host: string | null;
   smtp_port: number | null;
   smtp_user: string | null;
-  smtp_pass: string | null;
+  smtp_password: string | null;
   smtp_from: string | null;
   smtp_secure: Generated<number>;
   google_oauth_client_id: string | null;
@@ -150,11 +158,68 @@ export interface FileAccessTable {
   email: string;
 }
 
+export interface EmailVerificationTokensTable {
+  token: string;
+  user_id: string;
+  email: string;
+  expires_at: string;
+  used_at: string | null;
+  created_at: Generated<string>;
+}
+
+export interface MagicLinkTokensTable {
+  token: string;
+  user_id: string;
+  expires_at: string;
+  used_at: string | null;
+  created_at: Generated<string>;
+}
+
+export interface McpServersTable {
+  id: string;
+  type: string | null;
+  slug: string;
+  display_name: string;
+  url: string;
+  api_url: string | null;
+  credentials: string;
+  mode: Generated<string>;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface ChatSessionsTable {
+  id: Generated<number>;
+  workspace_key: string;
+  thread_key: Generated<string>;
+  session_id: string;
+  updated_at: Generated<string>;
+}
+
+export interface ScheduledTasksTable {
+  id: string;
+  platform: string;
+  context_type: string;
+  delivery_target: string;
+  thread_ts: string | null;
+  prompt: string;
+  schedule_type: string;
+  schedule_value: string;
+  timezone: Generated<string>;
+  session_mode: Generated<string>;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  status: Generated<string>;
+  created_by: string | null;
+  created_at: Generated<string>;
+}
+
 export interface DB {
   users: UsersTable;
   channels: ChannelsTable;
   whatsapp_creds: WhatsAppCredsTable;
   whatsapp_keys: WhatsAppKeysTable;
+  whatsapp_groups: WhatsAppGroupsTable;
   settings: SettingsTable;
   connector_configs: ConnectorConfigsTable;
   indexed_files: IndexedFilesTable;
@@ -165,4 +230,9 @@ export interface DB {
   document_timeframes: DocumentTimeframesTable;
   user_provider_identities: UserProviderIdentitiesTable;
   file_access: FileAccessTable;
+  email_verification_tokens: EmailVerificationTokensTable;
+  magic_link_tokens: MagicLinkTokensTable;
+  mcp_servers: McpServersTable;
+  chat_sessions: ChatSessionsTable;
+  scheduled_tasks: ScheduledTasksTable;
 }

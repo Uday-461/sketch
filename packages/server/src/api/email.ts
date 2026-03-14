@@ -29,19 +29,19 @@ export function getSmtpConfig(
     smtp_host: string | null;
     smtp_port: number | null;
     smtp_user: string | null;
-    smtp_pass: string | null;
+    smtp_password: string | null;
     smtp_from: string | null;
     smtp_secure: number;
   } | null,
 ): SmtpConfig | null {
-  if (!row?.smtp_host || !row?.smtp_port || !row?.smtp_user || !row?.smtp_pass || !row?.smtp_from) {
+  if (!row?.smtp_host || !row?.smtp_port || !row?.smtp_user || !row?.smtp_password || !row?.smtp_from) {
     return null;
   }
   return {
     host: row.smtp_host,
     port: row.smtp_port,
     user: row.smtp_user,
-    pass: row.smtp_pass,
+    pass: row.smtp_password,
     from: row.smtp_from,
     secure: row.smtp_secure === 1,
   };
@@ -113,7 +113,7 @@ export function emailRoutes(settings: SettingsRepo) {
       smtpHost: parsed.data.host,
       smtpPort: parsed.data.port,
       smtpUser: parsed.data.user,
-      smtpPass: parsed.data.pass,
+      smtpPassword: parsed.data.pass,
       smtpFrom: parsed.data.from,
       smtpSecure: parsed.data.secure ? 1 : 0,
     });
@@ -127,7 +127,7 @@ export function emailRoutes(settings: SettingsRepo) {
       smtpHost: null,
       smtpPort: null,
       smtpUser: null,
-      smtpPass: null,
+      smtpPassword: null,
       smtpFrom: null,
       smtpSecure: null,
     });

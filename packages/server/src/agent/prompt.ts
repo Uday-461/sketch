@@ -1,5 +1,12 @@
+import type { Attachment } from "../files";
 import { formatAttachmentsForPrompt } from "../files";
-import type { BufferedMessage } from "../slack/thread-buffer";
+
+export interface BufferedMessage {
+  userName: string;
+  text: string;
+  ts: string;
+  attachments?: Attachment[];
+}
 
 /**
  * Build the system context appended to the Claude Code preset.
@@ -13,6 +20,7 @@ import type { BufferedMessage } from "../slack/thread-buffer";
 export function buildSystemContext(params: {
   platform: "slack" | "whatsapp";
   userName: string;
+  userEmail?: string | null;
   workspaceDir: string;
   orgName?: string | null;
   botName?: string | null;
@@ -91,6 +99,13 @@ export function buildSystemContext(params: {
   }
 
   sections.push(
+    "## About Sketch",
+    "Sketch is an AI assistant platform deployed by organizations.",
+    "Each user has their own workspace, memory, and tool integrations.",
+    "User accounts and emails are managed by the admin from the Sketch dashboard.",
+  );
+
+  sections.push(
     "## Workspace Isolation",
     `Your working directory is ${params.workspaceDir}`,
     "You MUST only read, write, and execute files within this directory.",
@@ -125,8 +140,15 @@ export function buildSystemContext(params: {
     sections.push("Note: In this workspace, the CLAUDE.md is shared by all users.");
   }
 
+  sections.push(
+    "## Scheduled Tasks",
+    "Use the ManageScheduledTasks tool when a user asks to do something periodically, on a schedule, or as a reminder.",
+    "Platform and delivery target are filled in automatically from context. Do not ask the user for these.",
+    "Session mode defaults: DM and threads default to 'chat', top-level channel and group default to 'fresh'. Usually omit session_mode.",
+  );
+
   if (!params.channelContext && !params.groupContext) {
-    sections.push("## User", `Name: ${params.userName}`);
+    sections.push("## User", `Name: ${params.userName}`, `Email: ${params.userEmail || "not configured"}`);
   }
 
   return sections.join("\n");
@@ -146,8 +168,10 @@ export function formatBufferedContext(
   currentUserName: string,
   currentMessage: string,
   header?: string,
+  currentUserEmail?: string | null,
 ): string {
-  const currentLine = `[${currentUserName}]: ${currentMessage}`;
+  const attribution = currentUserEmail ? `${currentUserName} | ${currentUserEmail}` : currentUserName;
+  const currentLine = `[${attribution}]: ${currentMessage}`;
 
   if (messages.length === 0) return currentLine;
 

@@ -2,7 +2,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -15,24 +20,25 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { useTheme } from "@/hooks/use-theme";
 import { api } from "@/lib/api";
+import { getInitials } from "@/lib/utils";
 /**
  * App sidebar — navigation, branding, and user actions.
  * Follows the designer's sidebar structure with Phosphor icons.
  */
 import {
   BrainIcon,
+  CalendarDotsIcon,
   CaretUpDownIcon,
   ChatCircleIcon,
+  DesktopIcon,
   FolderSimpleIcon,
   GearIcon,
   LinkSimpleIcon,
   MoonIcon,
   SignOutIcon,
-  SparkleIcon,
   SunIcon,
   UsersThreeIcon,
 } from "@phosphor-icons/react";
@@ -50,7 +56,9 @@ const primaryNav: NavItem[] = [
   { label: "Channels", icon: <ChatCircleIcon size={18} />, href: "/channels" },
   { label: "Files", icon: <FolderSimpleIcon size={18} />, href: "/files" },
   { label: "Team", icon: <UsersThreeIcon size={18} />, href: "/team" },
+  { label: "Scheduled Tasks", icon: <CalendarDotsIcon size={18} />, href: "/scheduled-tasks" },
   { label: "Skills", icon: <BrainIcon size={18} />, href: "/skills" },
+  { label: "Connections", icon: <LinkSimpleIcon size={18} />, href: "/connections" },
 ];
 
 const adminNav: NavItem[] = [
@@ -58,10 +66,18 @@ const adminNav: NavItem[] = [
   { label: "Settings", icon: <GearIcon size={18} />, href: "/settings", disabled: true },
 ];
 
-export function AppSidebar({ email }: { email: string }) {
+export function AppSidebar({
+  displayName,
+  displayIdentifier,
+  role,
+}: {
+  displayName: string;
+  displayIdentifier: string;
+  role: "admin" | "member";
+}) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useTheme();
+  const { theme, resolvedTheme, setTheme, logoSrc } = useTheme();
   const queryClient = useQueryClient();
 
   const { data: identity } = useQuery({
@@ -77,21 +93,21 @@ export function AppSidebar({ email }: { email: string }) {
     },
   });
 
-  const initials = email.slice(0, 2).toUpperCase();
+  const initials = getInitials(displayIdentifier);
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="px-3 py-4">
+      <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" className="pointer-events-none">
-              <div className="flex size-7 items-center justify-center rounded-md bg-primary">
-                <SparkleIcon size={14} weight="fill" className="text-primary-foreground" />
+            <SidebarMenuButton size="lg" className="pointer-events-none hover:bg-transparent active:bg-transparent">
+              <div className="flex size-8 shrink-0 items-center justify-center">
+                <img src={logoSrc} alt="Sketch" className="size-7" />
               </div>
-              <div className="flex flex-col text-left group-data-[collapsible=icon]:hidden">
-                <span className="text-base font-semibold tracking-tight">{identity?.botName ?? "Sketch"}</span>
+              <div className="flex min-w-0 flex-col text-left">
+                <span className="truncate text-base font-semibold tracking-tight">{identity?.botName ?? "Sketch"}</span>
                 {identity?.orgName ? (
-                  <span className="text-xs text-muted-foreground truncate">{identity.orgName}</span>
+                  <span className="truncate text-xs text-muted-foreground">{identity.orgName}</span>
                 ) : null}
               </div>
             </SidebarMenuButton>
@@ -119,63 +135,52 @@ export function AppSidebar({ email }: { email: string }) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        <SidebarSeparator />
-
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {adminNav.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    isActive={location.pathname === item.href}
-                    onClick={() => !item.disabled && navigate({ to: item.href })}
-                    disabled={item.disabled}
-                    tooltip={item.label}
-                  >
-                    {item.icon}
-                    <span>{item.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <SidebarMenuButton size="lg">
-                  <div className="flex size-7 items-center justify-center rounded-full bg-primary/15 text-xs font-medium text-primary">
-                    {initials}
-                  </div>
-                  <div className="flex flex-col text-left text-xs leading-tight group-data-[collapsible=icon]:hidden">
-                    <span className="font-medium">Admin</span>
-                    <span className="text-muted-foreground">{email}</span>
-                  </div>
-                  <CaretUpDownIcon
-                    size={16}
-                    className="ml-auto text-muted-foreground group-data-[collapsible=icon]:hidden"
-                  />
-                </SidebarMenuButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" align="start" className="w-56">
-                <DropdownMenuItem onSelect={toggleTheme}>
-                  {theme === "dark" ? <SunIcon size={16} className="mr-2" /> : <MoonIcon size={16} className="mr-2" />}
-                  {theme === "dark" ? "Light mode" : "Dark mode"}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => logoutMutation.mutate()}>
-                  <SignOutIcon size={16} className="mr-2" />
-                  Log out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex h-12 w-full items-center gap-2 overflow-hidden rounded-md text-left text-sm outline-none ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground"
+            >
+              <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-medium text-primary">
+                {initials}
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col text-left text-xs leading-tight">
+                <span className="truncate font-medium">{displayName}</span>
+                <span className="truncate text-muted-foreground">{displayIdentifier}</span>
+              </div>
+              <CaretUpDownIcon size={16} className="shrink-0 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="w-60">
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                {resolvedTheme === "dark" ? <MoonIcon size={16} /> : <SunIcon size={16} />}
+                Theme
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as "dark" | "light" | "system")}>
+                  <DropdownMenuRadioItem value="light">
+                    <SunIcon size={16} /> Light
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="dark">
+                    <MoonIcon size={16} /> Dark
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="system">
+                    <DesktopIcon size={16} /> System
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => logoutMutation.mutate()}>
+              <SignOutIcon size={16} className="mr-2" />
+              Log out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </SidebarFooter>
     </Sidebar>
   );

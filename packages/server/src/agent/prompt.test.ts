@@ -249,6 +249,60 @@ describe("buildSystemContext", () => {
     });
   });
 
+  describe("about sketch section", () => {
+    it("is always present", () => {
+      const result = buildSystemContext({
+        platform: "slack",
+        userName: "Alice",
+        workspaceDir: "/data/workspaces/u123",
+      });
+      expect(result).toContain("## About Sketch");
+      expect(result).toContain("managed by the admin");
+    });
+  });
+
+  describe("user email", () => {
+    it("includes email when provided", () => {
+      const result = buildSystemContext({
+        platform: "slack",
+        userName: "Alice",
+        userEmail: "alice@example.com",
+        workspaceDir: "/data/workspaces/u123",
+      });
+      expect(result).toContain("Email: alice@example.com");
+    });
+
+    it("shows 'not configured' when email is null", () => {
+      const result = buildSystemContext({
+        platform: "slack",
+        userName: "Alice",
+        userEmail: null,
+        workspaceDir: "/data/workspaces/u123",
+      });
+      expect(result).toContain("Email: not configured");
+    });
+
+    it("shows 'not configured' when email is omitted", () => {
+      const result = buildSystemContext({
+        platform: "slack",
+        userName: "Alice",
+        workspaceDir: "/data/workspaces/u123",
+      });
+      expect(result).toContain("Email: not configured");
+    });
+
+    it("does not include email in channel context", () => {
+      const result = buildSystemContext({
+        platform: "slack",
+        userName: "Alice",
+        userEmail: "alice@example.com",
+        workspaceDir: "/data/workspaces/channel-C001",
+        channelContext: { channelName: "general" },
+      });
+      expect(result).not.toContain("Email:");
+    });
+  });
+
   describe("group context without description", () => {
     const result = buildSystemContext({
       platform: "whatsapp",
@@ -339,6 +393,29 @@ describe("formatBufferedContext", () => {
     const attachIdx = result.indexOf("<attachments>");
     const currentIdx = result.indexOf("[Alice]: looks good?");
     expect(attachIdx).toBeLessThan(currentIdx);
+  });
+
+  it("includes email in current user attribution when provided", () => {
+    const result = formatBufferedContext([], "Alice", "hello", undefined, "alice@test.com");
+    expect(result).toBe("[Alice | alice@test.com]: hello");
+  });
+
+  it("includes email in current user attribution with buffered messages", () => {
+    const messages = [{ userName: "Bob", text: "hey", ts: "1111.0001" }];
+    const result = formatBufferedContext(messages, "Alice", "hello", undefined, "alice@test.com");
+
+    expect(result).toContain("[Bob]: hey");
+    expect(result).toContain("[Alice | alice@test.com]: hello");
+  });
+
+  it("omits email from attribution when null", () => {
+    const result = formatBufferedContext([], "Alice", "hello", undefined, null);
+    expect(result).toBe("[Alice]: hello");
+  });
+
+  it("omits email from attribution when not provided", () => {
+    const result = formatBufferedContext([], "Alice", "hello");
+    expect(result).toBe("[Alice]: hello");
   });
 
   it("preserves message order", () => {

@@ -9,13 +9,17 @@
  */
 import { resolve } from "node:path";
 import { type SDKUserMessage, query } from "@anthropic-ai/claude-agent-sdk";
+import type { Kysely } from "kysely";
+import type { DB } from "../db/schema";
 import type { Attachment } from "../files";
 import { buildMultimodalContent, formatAttachmentsForPrompt, isImageAttachment } from "../files";
 import type { Logger } from "../logger";
+import type { TaskScheduler } from "../scheduler/service";
+import type { TaskContext } from "../scheduler/types";
 import { createCanUseTool } from "./permissions";
 import { buildSystemContext } from "./prompt";
 import { getSessionId, saveSessionId } from "./sessions";
-import { UploadCollector, createUploadMcpServer } from "./upload-tool";
+import { UploadCollector, createSketchMcpServer } from "./sketch-tools";
 
 export interface AgentResult {
   messageSent: boolean;
@@ -24,10 +28,19 @@ export interface AgentResult {
   pendingUploads: string[];
 }
 
+export interface McpServerConfig {
+  type: "http";
+  url: string;
+  headers?: Record<string, string>;
+}
+
 export interface RunAgentParams {
+  db: Kysely<DB>;
+  workspaceKey: string;
   userMessage: string;
   workspaceDir: string;
   userName: string;
+  userEmail?: string | null;
   logger: Logger;
   platform: "slack" | "whatsapp";
   onMessage: (text: string) => Promise<void>;
@@ -42,6 +55,17 @@ export interface RunAgentParams {
     groupName: string;
     groupDescription?: string;
   };
+  integrationMcpServers?: Record<string, McpServerConfig>;
+  findIntegrationProvider?: () => Promise<{ type: string; credentials: string } | null>;
+  /**
+   * Controls session behaviour for scheduled tasks.
+   * - "fresh": skip session resume and skip session save (fully ephemeral run)
+   * - "persistent" or "chat": normal get+save behaviour (same as undefined)
+   * When omitted, behaves exactly as before (always get + save).
+   */
+  sessionMode?: "fresh" | "persistent" | "chat";
+  taskContext?: TaskContext;
+  scheduler?: TaskScheduler;
 }
 
 /**
@@ -71,12 +95,14 @@ export function extractAssistantText(message: unknown): string | null {
 
 export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
   const { userMessage, workspaceDir, userName, logger } = params;
-  const existingSessionId = await getSessionId(workspaceDir, params.threadTs);
+  const isFresh = params.sessionMode === "fresh";
+  const existingSessionId = isFresh ? undefined : await getSessionId(params.db, params.workspaceKey, params.threadTs);
   const absWorkspace = resolve(workspaceDir);
 
   const systemAppend = buildSystemContext({
     platform: params.platform,
     userName,
+    userEmail: params.userEmail,
     workspaceDir: absWorkspace,
     orgName: params.orgName,
     botName: params.botName,
@@ -122,7 +148,13 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
   }
 
   const uploadCollector = new UploadCollector();
-  const uploadServer = createUploadMcpServer(uploadCollector, absWorkspace);
+  const sketchServer = createSketchMcpServer({
+    uploadCollector,
+    workspaceDir: absWorkspace,
+    findIntegrationProvider: params.findIntegrationProvider,
+    taskContext: params.taskContext,
+    scheduler: params.scheduler,
+  });
 
   const run = query({
     prompt,
@@ -138,7 +170,7 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
       permissionMode: "default" as const,
       allowDangerouslySkipPermissions: false,
       settingSources: ["project", "user"],
-      mcpServers: { sketch: uploadServer },
+      mcpServers: { sketch: sketchServer, ...params.integrationMcpServers },
       stderr: (data) => {
         logger.debug({ stderr: data.trim() }, "Agent subprocess");
       },
@@ -167,8 +199,8 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
     }
   }
 
-  if (sessionId) {
-    await saveSessionId(workspaceDir, sessionId, params.threadTs);
+  if (sessionId && !isFresh) {
+    await saveSessionId(params.db, params.workspaceKey, sessionId, params.threadTs);
   }
 
   const pendingUploads = uploadCollector.drain();

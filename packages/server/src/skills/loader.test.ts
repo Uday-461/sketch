@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -92,6 +92,49 @@ describe("parseFrontMatter", () => {
     expect(result.frontMatter.name).toBe('Quoted "Skill"');
     expect(result.frontMatter.description).toBe("First line\nSecond line");
   });
+
+  it("parses provider-type from frontmatter", () => {
+    const input = "---\nname: Canvas\nprovider-type: canvas\n---\nBody";
+    const result = parseFrontMatter(input);
+    expect(result.frontMatter.providerType).toBe("canvas");
+  });
+
+  it("leaves providerType undefined when not present", () => {
+    const input = "---\nname: Test\n---\nBody";
+    const result = parseFrontMatter(input);
+    expect(result.frontMatter.providerType).toBeUndefined();
+  });
+
+  it("handles quoted provider-type value", () => {
+    const input = '---\nprovider-type: "canvas"\n---\nBody';
+    const result = parseFrontMatter(input);
+    expect(result.frontMatter.providerType).toBe("canvas");
+  });
+
+  it("parses YAML folded block scalar (>) for description", () => {
+    const input =
+      "---\nname: icp-discovery\ndescription: >\n  ICP discovery and market validation.\n  Use when user wants to find customers.\n---\nBody";
+    const result = parseFrontMatter(input);
+    expect(result.frontMatter.name).toBe("icp-discovery");
+    expect(result.frontMatter.description).toBe(
+      "ICP discovery and market validation. Use when user wants to find customers.",
+    );
+    expect(result.body).toBe("Body");
+  });
+
+  it("parses YAML literal block scalar (|) for description", () => {
+    const input = "---\nname: test\ndescription: |\n  Line one.\n  Line two.\n---\nBody";
+    const result = parseFrontMatter(input);
+    expect(result.frontMatter.description).toBe("Line one.\nLine two.");
+  });
+
+  it("handles multiline description followed by another field", () => {
+    const input =
+      "---\nname: test\ndescription: >\n  Multi-line description\n  continues here.\ncategory: research\n---\nBody";
+    const result = parseFrontMatter(input);
+    expect(result.frontMatter.description).toBe("Multi-line description continues here.");
+    expect(result.frontMatter.category).toBe("research");
+  });
 });
 
 describe("inferNameFromBody", () => {
@@ -133,7 +176,7 @@ describe("loadProjectClaudeSkills", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = (await mkdir(join(tmpdir(), `sketch-skills-test-${Date.now()}`), { recursive: true })) as string;
+    tempDir = await mkdtemp(join(tmpdir(), "sketch-skills-test-"));
   });
 
   afterEach(async () => {
@@ -334,6 +377,18 @@ More content`;
     const result = loadProjectClaudeSkills(tempDir);
     expect(result[0].body).toContain("## Section 1");
     expect(result[0].body).toContain("Content here");
+  });
+
+  it("includes providerType on loaded skill with frontmatter", async () => {
+    await writeSkill("canvas", "---\nname: Canvas\nprovider-type: canvas\n---\nCanvas body");
+    const result = loadProjectClaudeSkills(tempDir);
+    expect(result[0].providerType).toBe("canvas");
+  });
+
+  it("returns undefined providerType for skill without the field", async () => {
+    await writeSkill("basic", "---\nname: Basic\n---\nBody");
+    const result = loadProjectClaudeSkills(tempDir);
+    expect(result[0].providerType).toBeUndefined();
   });
 });
 
