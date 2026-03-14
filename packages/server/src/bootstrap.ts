@@ -53,6 +53,10 @@ export interface CreateServerOptions {
 export async function createServer(config: Config, options?: CreateServerOptions): Promise<ServerHandle> {
   const connect = options?.connect !== false;
 
+  // Prevent the Agent SDK subprocess from detecting a nested session when the
+  // server is launched from inside Claude Code (which sets CLAUDECODE=1).
+  Reflect.deleteProperty(process.env, "CLAUDECODE");
+
   // 1. Logger
   const logger = createLogger(config);
 
