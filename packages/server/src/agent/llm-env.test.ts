@@ -63,6 +63,7 @@ describe("applyLlmEnvFromSettings", () => {
         aws_access_key_id: null,
         aws_secret_access_key: null,
         aws_region: null,
+        openrouter_api_key: null,
       },
       logger as never,
     );
@@ -90,6 +91,7 @@ describe("applyLlmEnvFromSettings", () => {
         aws_access_key_id: null,
         aws_secret_access_key: null,
         aws_region: null,
+        openrouter_api_key: null,
       },
       logger as never,
     );
@@ -113,6 +115,7 @@ describe("applyLlmEnvFromSettings", () => {
         aws_access_key_id: "AKIA...",
         aws_secret_access_key: "secret",
         aws_region: "us-west-2",
+        openrouter_api_key: null,
       },
       logger as never,
     );
@@ -140,6 +143,7 @@ describe("applyLlmEnvFromSettings", () => {
         aws_access_key_id: "",
         aws_secret_access_key: "secret",
         aws_region: "us-west-2",
+        openrouter_api_key: null,
       },
       logger as never,
     );
@@ -156,6 +160,62 @@ describe("applyLlmEnvFromSettings", () => {
     );
   });
 
+  it("configures openrouter and clears bedrock/anthropic routing env", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-existing";
+    process.env.CLAUDE_CODE_USE_BEDROCK = "1";
+    process.env.AWS_ACCESS_KEY_ID = "aws-access";
+    process.env.AWS_SECRET_ACCESS_KEY = "aws-secret";
+    process.env.AWS_REGION = "us-east-1";
+    const logger = { warn: vi.fn(), info: vi.fn() };
+
+    applyLlmEnvFromSettings(
+      {
+        llm_provider: "openrouter",
+        anthropic_api_key: null,
+        aws_access_key_id: null,
+        aws_secret_access_key: null,
+        aws_region: null,
+        openrouter_api_key: "sk-or-test-key",
+      },
+      logger as never,
+    );
+
+    expect(process.env.ANTHROPIC_BASE_URL).toBe("https://openrouter.ai/api");
+    expect(process.env.ANTHROPIC_AUTH_TOKEN).toBe("sk-or-test-key");
+    expect(process.env.ANTHROPIC_API_KEY).toBe("");
+    expect(process.env.CLAUDE_CODE_USE_BEDROCK).toBeUndefined();
+    expect(process.env.AWS_ACCESS_KEY_ID).toBeUndefined();
+    expect(process.env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(process.env.AWS_REGION).toBeUndefined();
+    expect(logger.info).toHaveBeenCalledWith(
+      { llmProvider: "openrouter", source: "db" },
+      "Configured LLM provider from DB settings",
+    );
+  });
+
+  it("preserves env for incomplete openrouter settings", () => {
+    process.env.ANTHROPIC_API_KEY = "existing-key";
+    const logger = { warn: vi.fn(), info: vi.fn() };
+
+    applyLlmEnvFromSettings(
+      {
+        llm_provider: "openrouter",
+        anthropic_api_key: null,
+        aws_access_key_id: null,
+        aws_secret_access_key: null,
+        aws_region: null,
+        openrouter_api_key: null,
+      },
+      logger as never,
+    );
+
+    expect(process.env.ANTHROPIC_API_KEY).toBe("existing-key");
+    expect(logger.warn).toHaveBeenCalledWith(
+      { llmProvider: "openrouter", hasOpenrouterKey: false },
+      "Incomplete LLM settings in DB; preserving existing environment-based LLM config",
+    );
+  });
+
   it("warns and leaves env untouched for unsupported providers", () => {
     process.env.ANTHROPIC_API_KEY = "existing-key";
     const logger = { warn: vi.fn(), info: vi.fn() };
@@ -167,13 +227,14 @@ describe("applyLlmEnvFromSettings", () => {
         aws_access_key_id: null,
         aws_secret_access_key: null,
         aws_region: null,
+        openrouter_api_key: null,
       },
       logger as never,
     );
 
     expect(process.env.ANTHROPIC_API_KEY).toBe("existing-key");
     expect(logger.warn).toHaveBeenCalledWith(
-      { llmProvider: "vertex", supportedProviders: ["anthropic", "bedrock"] },
+      { llmProvider: "vertex", supportedProviders: ["anthropic", "bedrock", "openrouter"] },
       "Unsupported LLM provider in DB; preserving existing environment-based LLM config",
     );
   });

@@ -3,7 +3,12 @@ import type { Logger } from "../logger";
 
 type LlmSettings = Pick<
   SettingsTable,
-  "llm_provider" | "anthropic_api_key" | "aws_access_key_id" | "aws_secret_access_key" | "aws_region"
+  | "llm_provider"
+  | "anthropic_api_key"
+  | "aws_access_key_id"
+  | "aws_secret_access_key"
+  | "aws_region"
+  | "openrouter_api_key"
 >;
 
 function unsetEnv(...keys: string[]) {
@@ -68,10 +73,28 @@ export function applyLlmEnvFromSettings(settings: LlmSettings | null, logger?: L
     return;
   }
 
+  if (settings.llm_provider === "openrouter") {
+    if (!settings.openrouter_api_key) {
+      logger?.warn(
+        { llmProvider: settings.llm_provider, hasOpenrouterKey: false },
+        "Incomplete LLM settings in DB; preserving existing environment-based LLM config",
+      );
+      return;
+    }
+
+    clearProviderRoutingEnv();
+    unsetEnv("ANTHROPIC_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION");
+    process.env.ANTHROPIC_BASE_URL = "https://openrouter.ai/api";
+    process.env.ANTHROPIC_AUTH_TOKEN = settings.openrouter_api_key;
+    process.env.ANTHROPIC_API_KEY = "";
+    logger?.info({ llmProvider: "openrouter", source: "db" }, "Configured LLM provider from DB settings");
+    return;
+  }
+
   logger?.warn(
     {
       llmProvider: settings.llm_provider,
-      supportedProviders: ["anthropic", "bedrock"],
+      supportedProviders: ["anthropic", "bedrock", "openrouter"],
     },
     "Unsupported LLM provider in DB; preserving existing environment-based LLM config",
   );
