@@ -55,7 +55,7 @@ import {
 import { emailSchema, whatsappNumberSchema } from "@sketch/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute, useRouteContext } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { dashboardRoute } from "./dashboard";
@@ -330,100 +330,17 @@ function ChannelBadge({
 }
 
 function EmptyState({ onAdd }: { onAdd: () => void }) {
-  const orb1 = useRef<HTMLDivElement>(null);
-  const orb2 = useRef<HTMLDivElement>(null);
-  const orb3 = useRef<HTMLDivElement>(null);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const nx = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
-    const ny = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
-    const MAX_PX = 10;
-
-    if (orb1.current) orb1.current.style.transform = `translate(${nx * MAX_PX * 1.0}px, ${ny * MAX_PX * 0.7}px)`;
-    if (orb2.current) orb2.current.style.transform = `translate(${nx * MAX_PX * -0.8}px, ${ny * MAX_PX * -1.0}px)`;
-    if (orb3.current) orb3.current.style.transform = `translate(${nx * MAX_PX * 0.5}px, ${ny * MAX_PX * 1.0}px)`;
-  }, []);
-
-  const orbBase = "absolute rounded-full pointer-events-none blur-[64px]";
-  const orbTransition =
-    "transition-transform duration-[1400ms] [transition-timing-function:cubic-bezier(0.22,0.61,0.36,1)]";
-
   return (
-    <div
-      onMouseMove={handleMouseMove}
-      className="relative flex min-h-[240px] flex-col items-center justify-center overflow-hidden text-center"
-      style={{
-        background: "#13131a",
-        border: "1.5px dashed rgba(255, 255, 255, 0.12)",
-        borderRadius: 14,
-        padding: "48px 24px",
-      }}
-    >
-      {/* Orb 1 — Violet */}
-      <div
-        ref={orb1}
-        className={`${orbBase} ${orbTransition}`}
-        style={{
-          width: 300,
-          height: 300,
-          background: "radial-gradient(circle, #6b7dfa 0%, transparent 70%)",
-          opacity: 0.11,
-          top: -90,
-          left: -70,
-        }}
-      />
-      {/* Orb 2 — Periwinkle */}
-      <div
-        ref={orb2}
-        className={`${orbBase} ${orbTransition}`}
-        style={{
-          width: 240,
-          height: 240,
-          background: "radial-gradient(circle, #a5b0ff 0%, transparent 70%)",
-          opacity: 0.08,
-          bottom: -70,
-          right: -50,
-        }}
-      />
-      {/* Orb 3 — Deep indigo */}
-      <div
-        ref={orb3}
-        className={`${orbBase} ${orbTransition}`}
-        style={{
-          width: 180,
-          height: 180,
-          background: "radial-gradient(circle, #4f5fd4 0%, transparent 70%)",
-          opacity: 0.09,
-          top: 10,
-          right: "18%",
-        }}
-      />
-
-      {/* Content — above orbs */}
-      <div className="relative z-2 flex flex-col items-center">
-        <div
-          className="flex items-center justify-center"
-          style={{
-            width: 44,
-            height: 44,
-            background: "rgba(255, 255, 255, 0.06)",
-            borderRadius: 10,
-          }}
-        >
-          <UsersThreeIcon size={22} style={{ color: "rgba(255, 255, 255, 0.4)" }} />
-        </div>
-        <p className="mt-4" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255, 255, 255, 0.75)" }}>
-          Your team's empty!
-        </p>
-        <p className="mt-1" style={{ fontSize: 13, color: "rgba(255, 255, 255, 0.3)" }}>
-          Add your first team member to get started.
-        </p>
-        <Button size="sm" onClick={onAdd} className="mt-4">
-          <PlusIcon size={14} weight="bold" />
-          Add member
-        </Button>
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card px-6 py-16 text-center">
+      <div className="flex size-11 items-center justify-center rounded-lg bg-muted">
+        <UsersThreeIcon size={22} className="text-muted-foreground" />
       </div>
+      <p className="mt-4 text-sm font-medium">Your team's empty!</p>
+      <p className="mt-1 text-xs text-muted-foreground">Add your first team member to get started.</p>
+      <Button size="sm" onClick={onAdd} className="mt-4">
+        <PlusIcon size={14} weight="bold" />
+        Add member
+      </Button>
     </div>
   );
 }

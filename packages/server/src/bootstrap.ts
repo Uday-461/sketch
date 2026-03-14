@@ -21,6 +21,8 @@ import { createLogger } from "./logger";
 import { QueueManager } from "./queue";
 import { TaskScheduler } from "./scheduler/service";
 import { syncFeaturedSkills } from "./skills/sync";
+import { createLlmCallFn } from "./connectors/llm";
+import { startSyncScheduler } from "./connectors/sync";
 import { createConfiguredSlackBot, validateSlackTokens } from "./slack/adapter";
 import type { SlackBot } from "./slack/bot";
 import { createSlackStartupManager } from "./slack/startup";
@@ -118,6 +120,11 @@ export async function createServer(config: Config, options?: CreateServerOptions
     },
   });
   await scheduler.start();
+
+  // 8.6. Connector sync scheduler — recovers stale syncs, runs periodic sync + enrichment
+  const stopSyncScheduler = startSyncScheduler(db, logger, 30 * 60 * 1000, {
+    llmCall: createLlmCallFn(),
+  });
 
   const slackAdapterDeps = {
     db,
@@ -219,6 +226,7 @@ export async function createServer(config: Config, options?: CreateServerOptions
   // 11. Shutdown handle
   async function shutdown() {
     logger.info("Shutting down...");
+    stopSyncScheduler();
     scheduler.stop();
     if (slack) await slack.stop();
     await whatsapp.stop();

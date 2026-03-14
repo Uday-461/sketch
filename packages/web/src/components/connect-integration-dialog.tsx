@@ -313,14 +313,15 @@ export function ConnectIntegrationDialog({
               </p>
             </div>
 
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
-              </DialogClose>
-              <Button variant="ghost" size="sm" onClick={() => setStep("oauth-config")}>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setStep("oauth-config")}
+                className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              >
                 Reconfigure OAuth
-              </Button>
-            </DialogFooter>
+              </button>
+            </div>
           </>
         ) : step === "credentials" ? (
           /* Non-OAuth-redirect: manual credential entry */
@@ -462,12 +463,25 @@ export function SharedDrivePicker({
   selectedIds,
   onToggle,
   disabled,
+  connectorId,
 }: {
   drives: SharedDrive[];
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
   disabled?: boolean;
+  connectorId?: string;
 }) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   if (drives.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-muted/20 px-4 py-6 text-center">
@@ -508,41 +522,64 @@ export function SharedDrivePicker({
       <div className="max-h-64 space-y-0.5 overflow-y-auto rounded-lg border border-border">
         {drives.map((drive) => {
           const isSelected = selectedIds.has(drive.id);
+          const isExpanded = expandedIds.has(drive.id);
           return (
-            <button
-              key={drive.id}
-              type="button"
-              onClick={() => onToggle(drive.id)}
-              disabled={disabled}
-              className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50 disabled:opacity-50 ${
-                isSelected ? "bg-muted/30" : ""
-              }`}
-            >
-              <span
-                className={`inline-flex size-4 shrink-0 items-center justify-center rounded border ${
-                  isSelected ? "border-primary bg-primary" : "border-border"
+            <div key={drive.id}>
+              <div
+                className={`flex w-full items-center gap-1 px-1 py-2 text-left text-sm transition-colors hover:bg-muted/50 ${
+                  isSelected ? "bg-muted/30" : ""
                 }`}
               >
-                {isSelected && (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={3}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="size-3 text-primary-foreground"
-                    role="img"
-                    aria-label="Selected"
+                {connectorId ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(drive.id)}
+                    className="flex shrink-0 items-center justify-center size-6 rounded hover:bg-muted/80 text-muted-foreground"
+                    title="Preview drive contents"
                   >
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
+                    <CaretRightIcon size={12} className={`transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                  </button>
+                ) : (
+                  <span className="size-6 shrink-0" />
                 )}
-              </span>
-              <FolderIcon size={16} className="shrink-0 text-muted-foreground" />
-              <span className="truncate">{drive.name}</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => onToggle(drive.id)}
+                  disabled={disabled}
+                  className="flex flex-1 items-center gap-2.5 disabled:opacity-50"
+                >
+                  <span
+                    className={`inline-flex size-4 shrink-0 items-center justify-center rounded border ${
+                      isSelected ? "border-primary bg-primary" : "border-border"
+                    }`}
+                  >
+                    {isSelected && (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="size-3 text-primary-foreground"
+                        role="img"
+                        aria-label="Selected"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </span>
+                  {isExpanded ? (
+                    <FolderOpenIcon size={16} className="shrink-0 text-muted-foreground" />
+                  ) : (
+                    <FolderIcon size={16} className="shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="truncate">{drive.name}</span>
+                </button>
+              </div>
+              {isExpanded && connectorId && <FolderContents connectorId={connectorId} folderId={drive.id} />}
+            </div>
           );
         })}
       </div>
@@ -555,7 +592,7 @@ export function SharedDrivePicker({
 }
 
 /** Expandable row showing a folder's children (files and subfolders). */
-function FolderContents({
+export function FolderContents({
   connectorId,
   folderId,
 }: {

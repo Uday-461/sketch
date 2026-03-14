@@ -78,14 +78,37 @@ export function chunkText(text: string, opts?: ChunkOptions): Chunk[] {
         flushChunk();
       }
 
-      // If a single paragraph exceeds maxChars, split it by sentences
+      // If a single paragraph exceeds maxChars, split it by sentences, then by lines, then hard-split
       if (paraWithSep.length > maxChars) {
         const sentences = paraWithSep.split(/(?<=[.!?])\s+/);
-        for (const sentence of sentences) {
-          if (current.length + sentence.length + 1 > maxChars && current.length > overlapChars) {
-            flushChunk();
+
+        // If sentence splitting didn't help (e.g. CSV, code), split by lines
+        const segments =
+          sentences.length <= 1 && paraWithSep.includes("\n")
+            ? paraWithSep.split("\n")
+            : sentences;
+
+        for (const segment of segments) {
+          // If a single segment still exceeds maxChars, hard-split by character
+          if (segment.length > maxChars) {
+            let pos = 0;
+            while (pos < segment.length) {
+              const slice = segment.slice(pos, pos + maxChars - (current ? current.length + 1 : 0));
+              if (current.length + slice.length + 1 > maxChars && current.length > overlapChars) {
+                flushChunk();
+              }
+              current += (current ? " " : "") + slice;
+              pos += slice.length;
+              if (current.length >= maxChars - overlapChars) {
+                flushChunk();
+              }
+            }
+          } else {
+            if (current.length + segment.length + 1 > maxChars && current.length > overlapChars) {
+              flushChunk();
+            }
+            current += (current ? " " : "") + segment;
           }
-          current += (current ? " " : "") + sentence;
         }
       } else {
         current += (current ? "\n\n" : "") + paraWithSep;

@@ -46,6 +46,8 @@ interface EnrichmentDeps {
   downloadImage?: (providerFileId: string, connectorConfigId: string) => Promise<{ buffer: Buffer; mimeType: string }>;
   /** Org context for the tagging prompt — helps the LLM understand documents in context. */
   orgContext?: string;
+  /** If set, only enrich these specific file IDs (ignoring pending status). */
+  fileIds?: string[];
 }
 
 export interface EnrichmentResult {
@@ -56,7 +58,7 @@ export interface EnrichmentResult {
 }
 
 /**
- * Run enrichment for all pending files.
+ * Run enrichment for pending files, or specific files if fileIds is set.
  */
 export async function runEnrichment(deps: EnrichmentDeps): Promise<EnrichmentResult> {
   const { db, logger } = deps;
@@ -68,7 +70,7 @@ export async function runEnrichment(deps: EnrichmentDeps): Promise<EnrichmentRes
   };
 
   // Find files needing enrichment
-  const pendingFiles = await db
+  let query = db
     .selectFrom("indexed_files")
     .select([
       "id",
@@ -84,10 +86,15 @@ export async function runEnrichment(deps: EnrichmentDeps): Promise<EnrichmentRes
       "source_created_at",
       "source_updated_at",
     ])
-    .where("is_archived", "=", 0)
-    .where("embedding_status", "in", ["pending", "failed", "processing"])
-    .limit(MAX_FILES_PER_RUN)
-    .execute();
+    .where("is_archived", "=", 0);
+
+  if (deps.fileIds && deps.fileIds.length > 0) {
+    query = query.where("id", "in", deps.fileIds);
+  } else {
+    query = query.where("embedding_status", "in", ["pending", "failed", "processing"]);
+  }
+
+  const pendingFiles = await query.limit(MAX_FILES_PER_RUN).execute();
 
   if (pendingFiles.length === 0) {
     logger.debug("No files pending enrichment");
@@ -192,6 +199,37 @@ async function enrichTextDocument(
 ): Promise<void> {
   const { db, logger, embeddingProvider, llmCall } = deps;
 
+  // For structured data (CSV/sheets), only use the head for tagging — no chunking, no embedding
+  if (isStructured) {
+    const taggingResult = tagStructuredContent(file.content, file.file_name, file.source_path);
+
+    await db
+      .updateTable("indexed_files")
+      .set({
+        tags: JSON.stringify(taggingResult.tags),
+        summary: taggingResult.summary || null,
+      })
+      .where("id", "=", file.id)
+      .execute();
+
+    await clearFileTimeframes(db, file.id);
+    for (const tf of taggingResult.timeframes) {
+      await db
+        .insertInto("document_timeframes")
+        .values({
+          id: randomUUID(),
+          indexed_file_id: file.id,
+          start_date: tf.startDate,
+          end_date: tf.endDate ?? null,
+          context: tf.context ?? null,
+        })
+        .execute();
+    }
+
+    logger.debug({ fileId: file.id, fileName: file.file_name, tags: taggingResult.tags.length }, "Structured file tagged (no chunking/embedding)");
+    return;
+  }
+
   // 1. Chunk the content
   const chunks = chunkText(file.content);
 
@@ -247,10 +285,7 @@ async function enrichTextDocument(
 
   const wordCount = file.content.split(/\s+/).length;
 
-  if (isStructured) {
-    // Deterministic tagging for structured data
-    taggingResult = tagStructuredContent(file.content, file.file_name, file.source_path);
-  } else if (wordCount < 100) {
+  if (wordCount < 100) {
     // Short content — deterministic tagging, no LLM needed
     taggingResult = tagShortContent(file.content, file.file_name, file.source_path);
   } else {
@@ -388,6 +423,20 @@ async function batchTagDocument(
   let currentBatch: typeof chunks = [];
   let currentTokens = 0;
   for (const chunk of chunks) {
+    // Safety: skip oversized chunks that would exceed the API limit on their own
+    if (chunk.tokenCount > TAG_BATCH_TOKEN_LIMIT) {
+      // Flush current batch first
+      if (currentBatch.length > 0) {
+        batches.push(currentBatch);
+        currentBatch = [];
+        currentTokens = 0;
+      }
+      // Truncate the chunk content to fit within the limit
+      const maxChars = TAG_BATCH_TOKEN_LIMIT * 4;
+      const truncated = { ...chunk, content: chunk.content.slice(0, maxChars), tokenCount: TAG_BATCH_TOKEN_LIMIT };
+      batches.push([truncated]);
+      continue;
+    }
     if (currentBatch.length > 0 && currentTokens + chunk.tokenCount > TAG_BATCH_TOKEN_LIMIT) {
       batches.push(currentBatch);
       currentBatch = [];

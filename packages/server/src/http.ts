@@ -68,7 +68,7 @@ export function createApp(db: Kysely<DB>, config: Config, deps?: AppDeps) {
       onLlmSettingsUpdated: deps?.onLlmSettingsUpdated,
     }),
   );
-  app.route("/api/settings", settingsRoutes(settings));
+  app.route("/api/settings", settingsRoutes(settings, db, deps?.logger));
   app.route("/api/skills", skillsRoutes(config));
   app.route("/api/users", userRoutes(users, { settings, db, logger, config }));
   app.route("/api/mcp-servers", mcpServerRoutes(mcpServers, users));

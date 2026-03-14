@@ -33,33 +33,44 @@ export interface TaggingResult {
  * No LLM call — purely deterministic.
  */
 export function tagStructuredContent(content: string, fileName: string, sourcePath?: string | null): TaggingResult {
-  const lines = content.split("\n").filter((l) => l.trim());
-  if (lines.length === 0) {
+  // For XLSX: content has "## SheetName\n<csv rows>" per sheet.
+  // For CSV: content is raw rows with no sheet headers.
+  // We scan ALL lines for sheet headers but only keep the header row + a few sample rows per sheet.
+  const SAMPLE_ROWS_PER_SHEET = 10;
+  const allLines = content.split("\n");
+
+  if (allLines.length === 0 || !allLines.some((l) => l.trim())) {
     return { tags: [], summary: `Empty spreadsheet: ${fileName}`, timeframes: [] };
   }
 
-  // Parse sections (our XLSX extractor produces "## SheetName\n<csv>" format)
-  const sheets: Array<{ name: string; headers: string[]; rowCount: number }> = [];
-  let currentSheet: { name: string; lines: string[] } | null = null;
+  // First pass: find all sheets, capture header + sample rows, count total rows per sheet
+  const sheets: Array<{ name: string; headers: string[]; rowCount: number; sampleLines: string[] }> = [];
+  let currentSheet: { name: string; lines: string[]; rowCount: number; gotEnough: boolean } | null = null;
 
-  for (const line of lines) {
+  for (const line of allLines) {
     if (line.startsWith("## ")) {
+      // Flush previous sheet
       if (currentSheet) {
-        sheets.push(parseSheet(currentSheet));
+        sheets.push(parseSheetWithCount(currentSheet));
       }
-      currentSheet = { name: line.slice(3).trim(), lines: [] };
-    } else if (currentSheet) {
-      currentSheet.lines.push(line);
-    } else {
-      // No sheet headers — treat entire content as one sheet
+      currentSheet = { name: line.slice(3).trim(), lines: [], rowCount: 0, gotEnough: false };
+    } else if (line.trim()) {
       if (!currentSheet) {
-        currentSheet = { name: fileName.replace(/\.[^.]+$/, ""), lines: [] };
+        // No sheet headers (plain CSV) — treat as single sheet
+        currentSheet = { name: fileName.replace(/\.[^.]+$/, ""), lines: [], rowCount: 0, gotEnough: false };
       }
-      currentSheet.lines.push(line);
+      currentSheet.rowCount++;
+      // Keep header row (first) + sample rows
+      if (!currentSheet.gotEnough) {
+        currentSheet.lines.push(line);
+        if (currentSheet.lines.length >= SAMPLE_ROWS_PER_SHEET + 1) {
+          currentSheet.gotEnough = true;
+        }
+      }
     }
   }
   if (currentSheet) {
-    sheets.push(parseSheet(currentSheet));
+    sheets.push(parseSheetWithCount(currentSheet));
   }
 
   // Collect tags from headers and sheet names
@@ -74,13 +85,16 @@ export function tagStructuredContent(content: string, fileName: string, sourcePa
     }
   }
 
-  // Detect date values in content for timeframes
-  const timeframes = extractDatesFromText(content);
+  // Detect date values from sample lines only
+  const sampleContent = sheets.flatMap((s) => s.sampleLines).join("\n");
+  const timeframes = extractDatesFromText(sampleContent);
 
   // Build summary
   const totalRows = sheets.reduce((sum, s) => sum + s.rowCount, 0);
-  const sheetDesc = sheets.map((s) => `${s.name} (${s.rowCount} rows, columns: ${s.headers.join(", ")})`).join("; ");
-  const summary = `Spreadsheet with ${sheets.length} tab(s): ${sheetDesc}. ${totalRows} total rows.`;
+  const sheetDesc = sheets
+    .map((s) => `${s.name} (${s.rowCount.toLocaleString()} rows, columns: ${s.headers.join(", ")})`)
+    .join("; ");
+  const summary = `Spreadsheet with ${sheets.length} tab(s): ${sheetDesc}. ${totalRows.toLocaleString()} total rows.`;
 
   return {
     tags: [...tags].slice(0, 30),
@@ -89,17 +103,18 @@ export function tagStructuredContent(content: string, fileName: string, sourcePa
   };
 }
 
-function parseSheet(sheet: { name: string; lines: string[] }): {
+function parseSheetWithCount(sheet: {
   name: string;
-  headers: string[];
+  lines: string[];
   rowCount: number;
-} {
+}): { name: string; headers: string[]; rowCount: number; sampleLines: string[] } {
   const headers = sheet.lines.length > 0 ? sheet.lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, "")) : [];
 
   return {
     name: sheet.name,
     headers: headers.filter(Boolean),
-    rowCount: Math.max(0, sheet.lines.length - 1),
+    rowCount: Math.max(0, sheet.rowCount - 1), // subtract header row
+    sampleLines: sheet.lines,
   };
 }
 

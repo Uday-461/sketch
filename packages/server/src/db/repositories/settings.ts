@@ -47,6 +47,7 @@ export function createSettingsRepository(db: Kysely<DB>) {
         googleOauthClientId: string | null;
         googleOauthClientSecret: string | null;
         geminiApiKey: string | null;
+        enrichmentEnabled: number | null;
       }>,
     ) {
       const updates: Record<string, string | number | null> = {};
@@ -72,6 +73,7 @@ export function createSettingsRepository(db: Kysely<DB>) {
       if (data.googleOauthClientId !== undefined) updates.google_oauth_client_id = data.googleOauthClientId;
       if (data.googleOauthClientSecret !== undefined) updates.google_oauth_client_secret = data.googleOauthClientSecret;
       if (data.geminiApiKey !== undefined) updates.gemini_api_key = data.geminiApiKey;
+      if (data.enrichmentEnabled !== undefined) updates.enrichment_enabled = data.enrichmentEnabled;
 
       if (Object.keys(updates).length === 0) return;
 

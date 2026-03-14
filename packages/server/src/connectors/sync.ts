@@ -228,9 +228,14 @@ export async function runAllSyncs(db: Kysely<DB>, logger: Logger, deps?: SyncSch
   try {
     const settings = await db
       .selectFrom("settings")
-      .select(["gemini_api_key", "org_name"])
+      .select(["gemini_api_key", "org_name", "enrichment_enabled"])
       .where("id", "=", "default")
       .executeTakeFirst();
+
+    if (settings?.enrichment_enabled === 0) {
+      logger.info("Enrichment disabled, skipping post-sync enrichment");
+      return;
+    }
 
     const embeddingProvider = settings?.gemini_api_key
       ? createEmbeddingProvider({ provider: "gemini", apiKey: settings.gemini_api_key })
@@ -301,27 +306,15 @@ export function startSyncScheduler(
   // Run enrichment immediately for any pending files (without triggering a full sync)
   (async () => {
     try {
-      // TODO: Remove this one-time reset after all files are re-tagged with improved prompt
-      const resetCount = await db
-        .updateTable("indexed_files")
-        .set({ embedding_status: "pending", tags: null, summary: null })
-        .where("embedding_status", "in", ["done", "failed", "processing", "skipped"])
-        .executeTakeFirst();
-      if (resetCount.numUpdatedRows > 0n) {
-        // Clear all chunks and timeframes
-        await db.deleteFrom("document_chunks").execute();
-        await db.deleteFrom("document_timeframes").execute();
-        logger.info(
-          { reset: Number(resetCount.numUpdatedRows) },
-          "Reset files for re-enrichment (cleared tags, summaries, chunks)",
-        );
-      }
-
       const settings = await db
         .selectFrom("settings")
-        .select(["gemini_api_key", "org_name"])
+        .select(["gemini_api_key", "org_name", "enrichment_enabled"])
         .where("id", "=", "default")
         .executeTakeFirst();
+      if (settings?.enrichment_enabled === 0) {
+        logger.info("Enrichment disabled, skipping startup enrichment");
+        return;
+      }
       const embeddingProvider = settings?.gemini_api_key
         ? createEmbeddingProvider({ provider: "gemini", apiKey: settings.gemini_api_key })
         : null;
@@ -361,5 +354,5 @@ export function startSyncScheduler(
  */
 function buildOrgContext(_orgName: string | null): string {
   // Hardcoded org brief for now — move to settings UI later
-  return `His Canvas builds Sketch, an AI assistant platform for organisations. Previously operated as Apperture (a low-code data engineering platform — pitched to investors in 2023, did not raise). Pivoted to workflow automation / AI assistants in 2024. Key past clients from the Apperture era included Sangeetha Mobiles, WIOM, and Urbanpiper. The team works across engineering, marketing, and product. Documents span both the Apperture era and current His Canvas work.`;
+  return "His Canvas builds Sketch, an AI assistant platform for organisations. Previously operated as Apperture (a low-code data engineering platform — pitched to investors in 2023, did not raise). Pivoted to workflow automation / AI assistants in 2024. Key past clients from the Apperture era included Sangeetha Mobiles, WIOM, and Urbanpiper. The team works across engineering, marketing, and product. Documents span both the Apperture era and current His Canvas work.";
 }

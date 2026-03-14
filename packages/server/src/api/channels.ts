@@ -55,11 +55,6 @@ export function channelRoutes(deps: ChannelDeps) {
         connected: emailConfigured ? true : null,
         phoneNumber: null,
         fromAddress: emailConfigured ? (settingsRow?.smtp_from ?? null) : null,
-      },
-      {
-        platform: "email" as const,
-        configured: emailConfigured,
-        connected: emailConfigured,
         outboundOnly: true,
       },
     ];

@@ -306,6 +306,20 @@ export const api = {
     identity() {
       return request<{ orgName: string | null; botName: string }>("/api/settings/identity");
     },
+    searchConfig() {
+      return request<{ geminiApiKey: string | null; enrichmentEnabled: number }>("/api/settings/search");
+    },
+    updateSearchConfig(data: { geminiApiKey?: string | null; enrichmentEnabled?: boolean }) {
+      return request<{ geminiApiKey: string | null; enrichmentEnabled: number }>("/api/settings/search", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
+    runEnrichment() {
+      return request<{ success: boolean; message: string }>("/api/settings/search/run-enrichment", {
+        method: "POST",
+      });
+    },
   },
   integrations: {
     list() {
@@ -359,6 +373,11 @@ export const api = {
       return request<{ success: boolean; jobId: string }>(`/api/connectors/${id}/enrich`, {
         method: "POST",
         body: JSON.stringify(data),
+      });
+    },
+    enrichFile(fileId: string) {
+      return request<{ success: boolean; fileId: string; fileName: string }>(`/api/connectors/files/${fileId}/enrich`, {
+        method: "POST",
       });
     },
     browseGoogleDrive(credentials: { client_id: string; client_secret: string; refresh_token: string }) {

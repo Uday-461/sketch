@@ -26,6 +26,34 @@ import type { DB } from "../db/schema";
 
 type ConnectorRepo = ReturnType<typeof createConnectorRepository>;
 
+/** Run sync then enrichment (tagging + embedding) in background. */
+function syncThenEnrich(db: Kysely<DB>, connectorId: string, logger: Logger) {
+  runConnectorSync(db, connectorId, logger)
+    .then(async () => {
+      const settings = await db
+        .selectFrom("settings")
+        .select(["gemini_api_key", "enrichment_enabled"])
+        .where("id", "=", "default")
+        .executeTakeFirst();
+      if (settings?.enrichment_enabled === 0) {
+        logger.info("Enrichment disabled, skipping post-sync enrichment");
+        return;
+      }
+      const embeddingProvider = settings?.gemini_api_key
+        ? createEmbeddingProvider({ provider: "gemini", apiKey: settings.gemini_api_key })
+        : null;
+      return runEnrichment({
+        db,
+        logger: logger.child({ component: "enrichment" }),
+        embeddingProvider,
+        llmCall: createLlmCallFn(),
+      });
+    })
+    .catch((err) => {
+      logger.error({ err, connectorId }, "Background sync/enrichment failed");
+    });
+}
+
 const VALID_CONNECTOR_TYPES = ["google_drive", "clickup", "notion", "linear"] as const;
 const VALID_AUTH_TYPES = ["oauth", "api_key", "service_account"] as const;
 
@@ -126,10 +154,8 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
       createdBy: "admin",
     });
 
-    // Auto-trigger first sync in background (non-blocking)
-    runConnectorSync(db, config.id, logger).catch((err) => {
-      logger.error({ err, connectorId: config.id }, "Initial sync failed after connect");
-    });
+    // Auto-trigger first sync + enrichment in background (non-blocking)
+    syncThenEnrich(db, config.id, logger);
 
     return c.json(
       {
@@ -203,10 +229,10 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
     try {
       const settings = await db
         .selectFrom("settings")
-        .select("gemini_api_key")
+        .select(["gemini_api_key", "enrichment_enabled"])
         .where("id", "=", "default")
         .executeTakeFirst();
-      if (settings?.gemini_api_key) {
+      if (settings?.gemini_api_key && settings.enrichment_enabled !== 0) {
         const embedQuery = createQueryEmbedder({ provider: "gemini", apiKey: settings.gemini_api_key });
         queryEmbedding = await embedQuery(parsed.data.query);
       }
@@ -423,10 +449,8 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
       errorMessage: null,
     });
 
-    // Auto-trigger re-sync in background
-    runConnectorSync(db, config.id, logger).catch((err) => {
-      logger.error({ err, connectorId: config.id }, "Re-sync after scope change failed");
-    });
+    // Auto-trigger re-sync + enrichment in background
+    syncThenEnrich(db, config.id, logger);
 
     const updated = await connectorRepo.findConfigById(config.id);
     if (!updated) {
@@ -456,26 +480,7 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
     }
 
     // Run sync then enrichment in background
-    runConnectorSync(db, config.id, logger)
-      .then(async () => {
-        const settings = await db
-          .selectFrom("settings")
-          .select("gemini_api_key")
-          .where("id", "=", "default")
-          .executeTakeFirst();
-        const embeddingProvider = settings?.gemini_api_key
-          ? createEmbeddingProvider({ provider: "gemini", apiKey: settings.gemini_api_key })
-          : null;
-        return runEnrichment({
-          db,
-          logger: logger.child({ component: "enrichment" }),
-          embeddingProvider,
-          llmCall: createLlmCallFn(),
-        });
-      })
-      .catch((err) => {
-        logger.error({ err, connectorId: config.id }, "Background sync/enrichment failed");
-      });
+    syncThenEnrich(db, config.id, logger);
 
     return c.json({ message: "Sync started", connectorId: config.id });
   });
@@ -533,6 +538,42 @@ export function connectorRoutes(connectorRepo: ConnectorRepo, db: Kysely<DB>, lo
     logger.info({ jobId, connectorId: config.id, fileCount: parsed.data.fileIds.length }, "Enrichment requested");
 
     return c.json({ success: true, jobId });
+  });
+
+  /** Enrich a single file (tagging + embedding). For testing/debugging. */
+  routes.post("/files/:fileId/enrich", async (c) => {
+    const fileId = c.req.param("fileId");
+    const file = await db
+      .selectFrom("indexed_files")
+      .select(["id", "file_name"])
+      .where("id", "=", fileId)
+      .executeTakeFirst();
+
+    if (!file) {
+      return c.json({ error: { code: "NOT_FOUND", message: "File not found" } }, 404);
+    }
+
+    const settings = await db
+      .selectFrom("settings")
+      .select("gemini_api_key")
+      .where("id", "=", "default")
+      .executeTakeFirst();
+    const embeddingProvider = settings?.gemini_api_key
+      ? createEmbeddingProvider({ provider: "gemini", apiKey: settings.gemini_api_key })
+      : null;
+
+    // Enrich only this specific file
+    runEnrichment({
+      db,
+      logger: logger.child({ component: "enrichment", fileId }),
+      embeddingProvider,
+      llmCall: createLlmCallFn(),
+      fileIds: [fileId],
+    }).catch((err) => {
+      logger.error({ err, fileId }, "Single file enrichment failed");
+    });
+
+    return c.json({ success: true, fileId, fileName: file.file_name });
   });
 
   return routes;

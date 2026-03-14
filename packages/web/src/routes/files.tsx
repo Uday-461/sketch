@@ -12,12 +12,12 @@
  */
 import {
   ConnectIntegrationDialog,
+  FolderContents,
   FolderPicker,
   IntegrationIcon,
   SharedDrivePicker,
 } from "@/components/connect-integration-dialog";
 import { ConnectorLogo } from "@/components/connector-logos";
-import { EnrichDialog } from "@/components/enrich-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,7 +30,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,8 +45,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import type { ConnectorConfig, ConnectorFile, FileAccess, FileContent, SearchResult, UnifiedFile } from "@/lib/api";
 import { api } from "@/lib/api";
 import { INTEGRATIONS, type IntegrationDefinition, type IntegrationType, getIntegration } from "@/lib/integrations";
@@ -47,11 +56,17 @@ import {
   ArrowSquareOutIcon,
   ArrowsClockwiseIcon,
   CaretDownIcon,
+  CaretRightIcon,
   CheckCircleIcon,
-  CheckSquareIcon,
   CircleNotchIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  FileIcon,
   FileTextIcon,
+  FolderIcon,
+  FolderOpenIcon,
   FolderSimpleIcon,
+  GearIcon,
   GlobeIcon,
   GridFourIcon,
   LinkIcon,
@@ -60,7 +75,6 @@ import {
   PlusIcon,
   SparkleIcon,
   SpinnerGapIcon,
-  SquareIcon,
   TableIcon,
   TrashIcon,
   WarningCircleIcon,
@@ -92,11 +106,10 @@ function FilesPage() {
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [accessFilter, setAccessFilter] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [viewingFile, setViewingFile] = useState<string | null>(null);
-  const [showEnrichDialog, setShowEnrichDialog] = useState(false);
   const [connectingIntegration, setConnectingIntegration] = useState<IntegrationDefinition | null>(null);
   const [showBrowseAll, setShowBrowseAll] = useState(false);
+  const [showSearchSettings, setShowSearchSettings] = useState(false);
   const [managingConnector, setManagingConnector] = useState<{
     definition: IntegrationDefinition;
     connector: ConnectorConfig;
@@ -242,36 +255,6 @@ function FilesPage() {
     connectedByType.set(c.connectorType, c);
   }
 
-  /* ── Selection helpers ─────────────────────────────────── */
-
-  const toggleSelect = (fileId: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(fileId)) next.delete(fileId);
-      else next.add(fileId);
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === filteredFiles.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filteredFiles.map((f) => f.id)));
-    }
-  };
-
-  const selectedSource = useMemo(() => {
-    if (selectedIds.size === 0) return null;
-    const firstSelected = allFiles.find((f) => selectedIds.has(f.id));
-    return firstSelected?.source ?? null;
-  }, [selectedIds, allFiles]);
-
-  const selectedConnectorId = useMemo(() => {
-    if (!selectedSource) return null;
-    return connectors.find((c) => c.connectorType === selectedSource)?.id ?? null;
-  }, [selectedSource, connectors]);
-
   const handleConnected = () => {
     queryClient.invalidateQueries({ queryKey: ["integrations"] });
     queryClient.invalidateQueries({ queryKey: ["all-files"] });
@@ -287,22 +270,32 @@ function FilesPage() {
           <h1 className="text-xl font-bold">Files</h1>
           <p className="mt-1 text-sm text-muted-foreground">Your team's indexed knowledge base</p>
         </div>
-        {!isLoadingConnectors && totalFiles > 0 && (
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span>
-              {totalFiles.toLocaleString()} file{totalFiles !== 1 ? "s" : ""}
-            </span>
-            {enrichedCount > 0 && (
-              <>
-                <span className="text-border">|</span>
-                <span className="flex items-center gap-1">
-                  <SparkleIcon size={12} weight="fill" className="text-primary" />
-                  {enrichedCount} enriched
-                </span>
-              </>
-            )}
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {!isLoadingConnectors && totalFiles > 0 && (
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span>
+                {totalFiles.toLocaleString()} file{totalFiles !== 1 ? "s" : ""}
+              </span>
+              {enrichedCount > 0 && (
+                <>
+                  <span className="text-border">|</span>
+                  <span className="flex items-center gap-1">
+                    <SparkleIcon size={12} weight="fill" className="text-primary" />
+                    {enrichedCount} enriched
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowSearchSettings(true)}
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="Search & enrichment settings"
+          >
+            <GearIcon size={16} />
+          </button>
+        </div>
       </div>
 
       {/* Source pills — thin horizontal chips */}
@@ -414,13 +407,6 @@ function FilesPage() {
           ]}
           onChange={setStatusFilter}
         />
-
-        {selectedIds.size > 0 && selectedConnectorId && (
-          <Button size="sm" onClick={() => setShowEnrichDialog(true)}>
-            <SparkleIcon size={14} weight="fill" />
-            Enrich {selectedIds.size} file{selectedIds.size === 1 ? "" : "s"}
-          </Button>
-        )}
       </div>
 
       {/* File List */}
@@ -469,13 +455,6 @@ function FilesPage() {
         ) : (
           <>
             <div className="flex items-center gap-3 border-b border-border px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              <button type="button" onClick={toggleSelectAll} className="shrink-0">
-                {selectedIds.size === filteredFiles.length && filteredFiles.length > 0 ? (
-                  <CheckSquareIcon size={16} weight="fill" className="text-primary" />
-                ) : (
-                  <SquareIcon size={16} />
-                )}
-              </button>
               <span className="flex-1">Name</span>
               <span className="w-24 text-center">Source</span>
               <span className="w-16 text-center">Type</span>
@@ -485,13 +464,7 @@ function FilesPage() {
               <span className="w-5" />
             </div>
             {filteredFiles.map((file) => (
-              <UnifiedFileRow
-                key={file.id}
-                file={file}
-                selected={selectedIds.has(file.id)}
-                onToggleSelect={() => toggleSelect(file.id)}
-                onView={() => setViewingFile(file.id)}
-              />
+              <UnifiedFileRow key={file.id} file={file} onView={() => setViewingFile(file.id)} />
             ))}
 
             {/* Load more button — hidden when client-only filters are active since server pagination doesn't account for them */}
@@ -549,27 +522,11 @@ function FilesPage() {
         onConnected={handleConnected}
       />
 
-      {/* Enrich Dialog */}
-      {selectedConnectorId && (
-        <EnrichDialog
-          connectorId={selectedConnectorId}
-          fileIds={Array.from(selectedIds)}
-          fileCount={selectedIds.size}
-          integrationName={
-            selectedSource ? (getIntegration(selectedSource as IntegrationType)?.name ?? "Source") : "Source"
-          }
-          open={showEnrichDialog}
-          onOpenChange={setShowEnrichDialog}
-          onEnriched={() => {
-            setSelectedIds(new Set());
-            queryClient.invalidateQueries({ queryKey: ["integrations"] });
-            queryClient.invalidateQueries({ queryKey: ["all-files"] });
-          }}
-        />
-      )}
-
       {/* File Detail Sheet */}
       <FileDetailSheet fileId={viewingFile} onClose={() => setViewingFile(null)} />
+
+      {/* Search & Enrichment Settings Sheet */}
+      <SearchSettingsSheet open={showSearchSettings} onOpenChange={setShowSearchSettings} />
     </div>
   );
 }
@@ -761,6 +718,193 @@ function ConnectorRow({
         </Button>
       )}
     </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────
+ * Search & Enrichment Settings Sheet
+ * ───────────────────────────────────────────────────────── */
+
+function SearchSettingsSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const queryClient = useQueryClient();
+
+  const { data } = useQuery({
+    queryKey: ["settings", "search"],
+    queryFn: () => api.settings.searchConfig(),
+    enabled: open,
+  });
+
+  const [geminiKey, setGeminiKey] = useState("");
+  const [enrichmentEnabled, setEnrichmentEnabled] = useState(true);
+  const [showKey, setShowKey] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [showRunPrompt, setShowRunPrompt] = useState(false);
+
+  useEffect(() => {
+    if (data) {
+      setGeminiKey(data.geminiApiKey ?? "");
+      setEnrichmentEnabled(data.enrichmentEnabled === 1);
+      setDirty(false);
+      setShowRunPrompt(false);
+    }
+  }, [data]);
+
+  const mutation = useMutation({
+    mutationFn: (updates: { geminiApiKey?: string | null; enrichmentEnabled?: boolean }) =>
+      api.settings.updateSearchConfig(updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings", "search"] });
+      setDirty(false);
+      if (enrichmentEnabled) {
+        setShowRunPrompt(true);
+      } else {
+        toast.success("Settings saved");
+        onOpenChange(false);
+      }
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const enrichMutation = useMutation({
+    mutationFn: () => api.settings.runEnrichment(),
+    onSuccess: () => {
+      toast.success("Enrichment started — files will be processed in the background.");
+      onOpenChange(false);
+      setShowRunPrompt(false);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  function handleSave() {
+    const updates: { geminiApiKey?: string | null; enrichmentEnabled?: boolean } = {};
+    if (geminiKey !== (data?.geminiApiKey ?? "")) updates.geminiApiKey = geminiKey || null;
+    if (enrichmentEnabled !== (data?.enrichmentEnabled === 1)) updates.enrichmentEnabled = enrichmentEnabled;
+    mutation.mutate(updates);
+  }
+
+  const needsKey = enrichmentEnabled && !geminiKey.trim();
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) setShowRunPrompt(false);
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent>
+        {showRunPrompt ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Run enrichment now?</DialogTitle>
+              <DialogDescription>
+                This will tag, summarize, and generate embeddings for all pending files. You can also run it later from
+                individual files.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  toast.success("Settings saved");
+                  onOpenChange(false);
+                  setShowRunPrompt(false);
+                }}
+              >
+                Not now
+              </Button>
+              <Button onClick={() => enrichMutation.mutate()} disabled={enrichMutation.isPending}>
+                {enrichMutation.isPending && <SpinnerGapIcon size={16} className="mr-2 animate-spin" />}
+                Run enrichment
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Search & Enrichment</DialogTitle>
+              <DialogDescription>Configure how files are indexed and searched.</DialogDescription>
+            </DialogHeader>
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <Label htmlFor="enrichment-toggle" className="text-sm font-medium">
+                  AI Enrichment
+                </Label>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {enrichmentEnabled
+                    ? "Files are tagged, summarized & embedded for semantic search"
+                    : "Search uses keyword matching only (FTS5)"}
+                </p>
+              </div>
+              <Switch
+                id="enrichment-toggle"
+                checked={enrichmentEnabled}
+                onCheckedChange={(checked) => {
+                  setEnrichmentEnabled(checked);
+                  setDirty(true);
+                }}
+              />
+            </div>
+
+            {enrichmentEnabled && (
+              <>
+                <ol className="list-inside list-decimal space-y-1.5 text-xs text-muted-foreground">
+                  <li>Go to Google AI Studio</li>
+                  <li>Create or select a project</li>
+                  <li>Generate an API key</li>
+                  <li>Paste it below</li>
+                </ol>
+
+                <Button variant="ghost" size="sm" asChild className="w-fit">
+                  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">
+                    Get API key
+                    <ArrowSquareOutIcon className="size-3.5" />
+                  </a>
+                </Button>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="gemini-key" className="text-xs">
+                    Gemini API Key
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="gemini-key"
+                      type={showKey ? "text" : "password"}
+                      value={geminiKey}
+                      onChange={(e) => {
+                        setGeminiKey(e.target.value);
+                        setDirty(true);
+                      }}
+                      placeholder="AIza..."
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKey(!showKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showKey ? <EyeSlashIcon size={16} /> : <EyeIcon size={16} />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Used for generating vector embeddings</p>
+                </div>
+              </>
+            )}
+
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSave} disabled={!dirty || mutation.isPending || needsKey}>
+                {mutation.isPending && <SpinnerGapIcon size={16} className="mr-2 animate-spin" />}
+                Save
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1075,32 +1219,17 @@ function GoogleDriveScopeEditor({
         </div>
       ) : (
         <>
-          {drives.length > 0 && (
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Shared drives</p>
-              <div className="mt-1.5">
-                <SharedDrivePicker
-                  drives={drives}
-                  selectedIds={effectiveDriveIds}
-                  onToggle={toggleDrive}
-                  disabled={saveMutation.isPending}
-                />
-              </div>
-            </div>
-          )}
-          {folders.length > 0 && (
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">My Drive folders</p>
-              <div className="mt-1.5">
-                <FolderPicker
-                  folders={folders}
-                  selectedIds={effectiveFolderIds}
-                  onToggle={toggleFolder}
-                  disabled={saveMutation.isPending}
-                  connectorId={connectorId}
-                />
-              </div>
-            </div>
+          {(drives.length > 0 || folders.length > 0) && (
+            <CombinedDrivePicker
+              drives={drives}
+              folders={folders}
+              selectedDriveIds={effectiveDriveIds}
+              selectedFolderIds={effectiveFolderIds}
+              onToggleDrive={toggleDrive}
+              onToggleFolder={toggleFolder}
+              disabled={saveMutation.isPending}
+              connectorId={connectorId}
+            />
           )}
           {drives.length === 0 && folders.length === 0 && (
             <div className="rounded-lg border border-border bg-muted/20 px-3 py-3">
@@ -1121,6 +1250,185 @@ function GoogleDriveScopeEditor({
         </>
       )}
     </div>
+  );
+}
+
+/** Unified picker combining shared drives and My Drive folders in one list. */
+function CombinedDrivePicker({
+  drives,
+  folders,
+  selectedDriveIds,
+  selectedFolderIds,
+  onToggleDrive,
+  onToggleFolder,
+  disabled,
+  connectorId,
+}: {
+  drives: Array<{ id: string; name: string }>;
+  folders: Array<{ id: string; name: string }>;
+  selectedDriveIds: Set<string>;
+  selectedFolderIds: Set<string>;
+  onToggleDrive: (id: string) => void;
+  onToggleFolder: (id: string) => void;
+  disabled?: boolean;
+  connectorId: string;
+}) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const totalItems = drives.length + folders.length;
+  const totalSelected = selectedDriveIds.size + selectedFolderIds.size;
+  const allSelected = totalSelected === totalItems && totalItems > 0;
+
+  const selectAll = () => {
+    for (const d of drives) {
+      if (!selectedDriveIds.has(d.id)) onToggleDrive(d.id);
+    }
+    for (const f of folders) {
+      if (!selectedFolderIds.has(f.id)) onToggleFolder(f.id);
+    }
+  };
+
+  const deselectAll = () => {
+    for (const d of drives) {
+      if (selectedDriveIds.has(d.id)) onToggleDrive(d.id);
+    }
+    for (const f of folders) {
+      if (selectedFolderIds.has(f.id)) onToggleFolder(f.id);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <button
+        type="button"
+        onClick={() => (allSelected ? deselectAll() : selectAll())}
+        disabled={disabled}
+        className="flex w-full items-center gap-2 px-1 py-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+      >
+        <span className="inline-flex size-4 items-center justify-center rounded border border-border">
+          {allSelected && <span className="size-2 rounded-sm bg-foreground" />}
+        </span>
+        {allSelected ? "Deselect all" : "Select all"} ({totalItems})
+      </button>
+
+      <div className="max-h-80 space-y-0.5 overflow-y-auto rounded-lg border border-border">
+        {drives.map((drive) => {
+          const isSelected = selectedDriveIds.has(drive.id);
+          const isExpanded = expandedIds.has(drive.id);
+          return (
+            <div key={`drive-${drive.id}`}>
+              <div
+                className={`flex w-full items-center gap-1 px-1 py-2 text-left text-sm transition-colors hover:bg-muted/50 ${
+                  isSelected ? "bg-muted/30" : ""
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(drive.id)}
+                  className="flex shrink-0 items-center justify-center size-6 rounded hover:bg-muted/80 text-muted-foreground"
+                  title="Preview drive contents"
+                >
+                  <CaretRightIcon size={12} className={`transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onToggleDrive(drive.id)}
+                  disabled={disabled}
+                  className="flex flex-1 items-center gap-2.5 disabled:opacity-50"
+                >
+                  <CheckboxIndicator checked={isSelected} />
+                  {isExpanded ? (
+                    <FolderOpenIcon size={16} className="shrink-0 text-muted-foreground" />
+                  ) : (
+                    <FolderIcon size={16} className="shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="truncate">{drive.name}</span>
+                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">Shared</span>
+                </button>
+              </div>
+              {isExpanded && <FolderContents connectorId={connectorId} folderId={drive.id} />}
+            </div>
+          );
+        })}
+        {folders.map((folder) => {
+          const isSelected = selectedFolderIds.has(folder.id);
+          const isExpanded = expandedIds.has(folder.id);
+          return (
+            <div key={`folder-${folder.id}`}>
+              <div
+                className={`flex w-full items-center gap-1 px-1 py-2 text-left text-sm transition-colors hover:bg-muted/50 ${
+                  isSelected ? "bg-muted/30" : ""
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(folder.id)}
+                  className="flex shrink-0 items-center justify-center size-6 rounded hover:bg-muted/80 text-muted-foreground"
+                  title="Preview folder contents"
+                >
+                  <CaretRightIcon size={12} className={`transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onToggleFolder(folder.id)}
+                  disabled={disabled}
+                  className="flex flex-1 items-center gap-2.5 disabled:opacity-50"
+                >
+                  <CheckboxIndicator checked={isSelected} />
+                  {isExpanded ? (
+                    <FolderOpenIcon size={16} className="shrink-0 text-muted-foreground" />
+                  ) : (
+                    <FolderIcon size={16} className="shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="truncate">{folder.name}</span>
+                </button>
+              </div>
+              {isExpanded && <FolderContents connectorId={connectorId} folderId={folder.id} />}
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-[11px] text-muted-foreground">
+        {totalSelected} of {totalItems} item{totalItems === 1 ? "" : "s"} selected
+      </p>
+    </div>
+  );
+}
+
+function CheckboxIndicator({ checked }: { checked: boolean }) {
+  return (
+    <span
+      className={`inline-flex size-4 shrink-0 items-center justify-center rounded border ${
+        checked ? "border-primary bg-primary" : "border-border"
+      }`}
+    >
+      {checked && (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={3}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="size-3 text-primary-foreground"
+          role="img"
+          aria-label="Selected"
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      )}
+    </span>
   );
 }
 
@@ -1267,32 +1575,16 @@ function SearchResultRow({ result, onView }: { result: SearchResult; onView: () 
 
 function UnifiedFileRow({
   file,
-  selected,
-  onToggleSelect,
   onView,
 }: {
   file: UnifiedFile;
-  selected: boolean;
-  onToggleSelect: () => void;
   onView: () => void;
 }) {
   const def = getIntegration(file.source as IntegrationType);
   const Icon = file.contentCategory === "document" ? FileTextIcon : TableIcon;
 
   return (
-    <div
-      className={`flex items-center gap-3 border-b border-border px-3 py-2.5 text-sm transition-colors hover:bg-muted/30 ${
-        selected ? "bg-primary/5" : ""
-      }`}
-    >
-      <button type="button" onClick={onToggleSelect} className="shrink-0">
-        {selected ? (
-          <CheckSquareIcon size={16} weight="fill" className="text-primary" />
-        ) : (
-          <SquareIcon size={16} className="text-muted-foreground" />
-        )}
-      </button>
-
+    <div className="flex items-center gap-3 border-b border-border px-3 py-2.5 text-sm transition-colors hover:bg-muted/30">
       <button type="button" onClick={onView} className="flex min-w-0 flex-1 items-center gap-2 text-left">
         <Icon size={16} className="shrink-0 text-muted-foreground" />
         <div className="min-w-0">
@@ -1382,24 +1674,28 @@ function FileDetailSheet({ fileId, onClose }: { fileId: string | null; onClose: 
 
   return (
     <Sheet open={!!fileId} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+      <SheetContent side="right" className="flex w-full flex-col sm:max-w-lg">
         <SheetHeader>
           <SheetTitle className="text-base">{isLoading ? "Loading..." : (file?.fileName ?? "File")}</SheetTitle>
         </SheetHeader>
 
-        {isLoading ? (
-          <div className="space-y-4 px-4">
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-24 rounded-lg" />
-            <Skeleton className="h-48 rounded-lg" />
-          </div>
-        ) : file ? (
-          <FileDetailContent file={file} access={access ?? null} />
-        ) : (
-          <div className="flex items-center justify-center py-12">
-            <p className="text-sm text-muted-foreground">File not found.</p>
-          </div>
-        )}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {isLoading ? (
+            <div className="space-y-4 px-4">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-24 rounded-lg" />
+              <Skeleton className="h-48 rounded-lg" />
+            </div>
+          ) : file ? (
+            <FileDetailContent file={file} access={access ?? null} />
+          ) : (
+            <div className="flex items-center justify-center py-12">
+              <p className="text-sm text-muted-foreground">File not found.</p>
+            </div>
+          )}
+        </div>
+
+        {file && <FileDetailFooter fileId={file.id} />}
       </SheetContent>
     </Sheet>
   );
@@ -1471,7 +1767,7 @@ function FileDetailContent({ file, access }: { file: FileContent; access: FileAc
         <div>
           <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">AI Summary</p>
           <div className="mt-1 rounded-lg border border-primary/20 bg-primary/5 p-3">
-            <p className="text-sm leading-relaxed">{file.summary}</p>
+            <p className="font-mono text-xs leading-relaxed">{file.summary}</p>
           </div>
         </div>
       )}
@@ -1506,6 +1802,43 @@ function FileDetailContent({ file, access }: { file: FileContent; access: FileAc
           </pre>
         </div>
       )}
+    </div>
+  );
+}
+
+function FileDetailFooter({ fileId }: { fileId: string }) {
+  const queryClient = useQueryClient();
+
+  const enrichMutation = useMutation({
+    mutationFn: () => api.integrations.enrichFile(fileId),
+    onSuccess: () => {
+      toast.success("Enrichment started — check server logs");
+      queryClient.invalidateQueries({ queryKey: ["file-content", fileId] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  return (
+    <div className="border-t border-border px-4 py-3">
+      <Button
+        size="sm"
+        variant="outline"
+        className="w-full gap-1.5 text-xs"
+        onClick={() => enrichMutation.mutate()}
+        disabled={enrichMutation.isPending}
+      >
+        {enrichMutation.isPending ? (
+          <>
+            <SpinnerGapIcon size={12} className="animate-spin" />
+            Enriching...
+          </>
+        ) : (
+          <>
+            <SparkleIcon size={12} />
+            Generate Summary & Embeddings
+          </>
+        )}
+      </Button>
     </div>
   );
 }

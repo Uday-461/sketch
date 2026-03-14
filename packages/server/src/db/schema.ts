@@ -60,6 +60,7 @@ export interface SettingsTable {
   google_oauth_client_id: string | null;
   google_oauth_client_secret: string | null;
   gemini_api_key: string | null;
+  enrichment_enabled: Generated<number>;
   onboarding_completed_at: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;

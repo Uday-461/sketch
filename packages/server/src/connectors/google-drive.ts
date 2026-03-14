@@ -52,7 +52,7 @@ const TEXT_MIMES = new Set([
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 /** Max content size: 5MB of text. */
-const MAX_CONTENT_BYTES = 5 * 1024 * 1024;
+const MAX_CONTENT_BYTES = 512 * 1024; // 512 KB — ~128K tokens, safe for LLM enrichment
 
 /** Max file size to attempt download: 200MB. */
 const MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024;
@@ -130,10 +130,13 @@ async function driveRequest(
   }
 
   if (response.status === 429) {
+    if (attempt >= MAX_RETRIES) {
+      throw new Error(`Drive API ${path} rate-limited (429) after ${MAX_RETRIES} attempts`);
+    }
     const retryAfter = response.headers.get("Retry-After");
     const waitMs = retryAfter ? Number.parseInt(retryAfter, 10) * 1000 : 5000;
     await new Promise((resolve) => setTimeout(resolve, waitMs));
-    return driveRequest(path, accessToken, opts, 1);
+    return driveRequest(path, accessToken, opts, attempt + 1);
   }
 
   if (!response.ok) {
@@ -448,7 +451,7 @@ async function fetchDriveMemberEmails(driveId: string, accessToken: string, logg
     };
     if (pageToken) params.pageToken = pageToken;
 
-    const result = (await driveRequest(`/drives/${driveId}/permissions`, accessToken, { params })) as {
+    const result = (await driveRequest(`/files/${driveId}/permissions`, accessToken, { params })) as {
       permissions?: DrivePermission[];
       nextPageToken?: string;
     };
@@ -813,6 +816,8 @@ async function* syncSelectedFolders(
     if (visited.has(folderId)) continue;
     visited.add(folderId);
 
+    logger.info({ folderId, folderQueue: queue.length, visited: visited.size, totalFiles }, "Syncing folder");
+
     let pageToken: string | undefined;
 
     do {
@@ -843,6 +848,7 @@ async function* syncSelectedFolders(
       }
 
       pageToken = result.nextPageToken;
+      logger.debug({ folderId, filesProcessed: totalFiles, hasMore: !!pageToken }, "Folder sync page");
     } while (pageToken);
   }
 
