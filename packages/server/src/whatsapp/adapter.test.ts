@@ -407,7 +407,7 @@ describe("whatsapp/adapter", () => {
       await flush();
 
       const agentCall = vi.mocked(deps.runAgent).mock.calls[0][0];
-      expect(agentCall.userMessage).toContain("[Alice | alice@test.com]:");
+      expect(agentCall.userMessage).toContain("[Current sender: Alice | alice@test.com]:");
     });
 
     it("calls buildMcpServers with null for unregistered group users", async () => {
@@ -431,7 +431,7 @@ describe("whatsapp/adapter", () => {
 
       expect(deps.buildMcpServers).toHaveBeenCalledWith(null);
       const agentCall = vi.mocked(deps.runAgent).mock.calls[0][0];
-      expect(agentCall.userMessage).toContain("[Bob]:");
+      expect(agentCall.userMessage).toContain("[Current sender: Bob]:");
       expect(agentCall.userMessage).not.toContain("|");
     });
 

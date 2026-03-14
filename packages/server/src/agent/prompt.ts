@@ -171,9 +171,9 @@ export function formatBufferedContext(
   currentUserEmail?: string | null,
 ): string {
   const attribution = currentUserEmail ? `${currentUserName} | ${currentUserEmail}` : currentUserName;
-  const currentLine = `[${attribution}]: ${currentMessage}`;
+  const senderLine = `[Current sender: ${attribution}]: ${currentMessage}`;
 
-  if (messages.length === 0) return currentLine;
+  if (messages.length === 0) return senderLine;
 
   const lines: string[] = [];
   if (header) lines.push(header);
@@ -184,6 +184,6 @@ export function formatBufferedContext(
     }
   }
 
-  lines.push("", currentLine);
+  lines.push("", senderLine);
   return lines.join("\n");
 }

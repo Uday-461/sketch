@@ -324,12 +324,12 @@ describe("buildSystemContext", () => {
 });
 
 describe("formatBufferedContext", () => {
-  it("wraps current message with sender attribution when buffer is empty", () => {
+  it("wraps current message with Current sender attribution when buffer is empty", () => {
     const result = formatBufferedContext([], "Alice", "what do you think?");
-    expect(result).toBe("[Alice]: what do you think?");
+    expect(result).toBe("[Current sender: Alice]: what do you think?");
   });
 
-  it("prepends buffered messages with current message attributed", () => {
+  it("prepends buffered messages with Current sender attributed", () => {
     const messages = [
       { userName: "Bob", text: "I like option A", ts: "1111.0001" },
       { userName: "Carol", text: "Me too", ts: "1111.0002" },
@@ -338,14 +338,14 @@ describe("formatBufferedContext", () => {
 
     expect(result).toContain("[Bob]: I like option A");
     expect(result).toContain("[Carol]: Me too");
-    expect(result).toContain("[Alice]: what do you think?");
+    expect(result).toContain("[Current sender: Alice]: what do you think?");
   });
 
   it("does not include a header when none is provided", () => {
     const messages = [{ userName: "Bob", text: "hey", ts: "1111.0001" }];
     const result = formatBufferedContext(messages, "Alice", "hi");
 
-    expect(result).toBe("[Bob]: hey\n\n[Alice]: hi");
+    expect(result).toBe("[Bob]: hey\n\n[Current sender: Alice]: hi");
   });
 
   it("includes header when provided", () => {
@@ -354,7 +354,7 @@ describe("formatBufferedContext", () => {
 
     expect(result).toContain("[Thread context before you joined]");
     expect(result).toContain("[Bob]: hey there");
-    expect(result).toContain("[Alice]: hello");
+    expect(result).toContain("[Current sender: Alice]: hello");
   });
 
   it("separates buffered messages from current message with blank line", () => {
@@ -364,7 +364,7 @@ describe("formatBufferedContext", () => {
     const lines = result.split("\n");
     const blankIdx = lines.indexOf("");
     expect(blankIdx).toBeGreaterThan(0);
-    expect(lines[blankIdx + 1]).toBe("[Alice]: thanks");
+    expect(lines[blankIdx + 1]).toBe("[Current sender: Alice]: thanks");
   });
 
   it("includes XML attachment tags for messages with files", () => {
@@ -391,31 +391,31 @@ describe("formatBufferedContext", () => {
     expect(result).toContain('path="/ws/attachments/report.pdf"');
 
     const attachIdx = result.indexOf("<attachments>");
-    const currentIdx = result.indexOf("[Alice]: looks good?");
+    const currentIdx = result.indexOf("[Current sender: Alice]: looks good?");
     expect(attachIdx).toBeLessThan(currentIdx);
   });
 
-  it("includes email in current user attribution when provided", () => {
+  it("includes email in current sender attribution when provided", () => {
     const result = formatBufferedContext([], "Alice", "hello", undefined, "alice@test.com");
-    expect(result).toBe("[Alice | alice@test.com]: hello");
+    expect(result).toBe("[Current sender: Alice | alice@test.com]: hello");
   });
 
-  it("includes email in current user attribution with buffered messages", () => {
+  it("includes email in current sender attribution with buffered messages", () => {
     const messages = [{ userName: "Bob", text: "hey", ts: "1111.0001" }];
     const result = formatBufferedContext(messages, "Alice", "hello", undefined, "alice@test.com");
 
     expect(result).toContain("[Bob]: hey");
-    expect(result).toContain("[Alice | alice@test.com]: hello");
+    expect(result).toContain("[Current sender: Alice | alice@test.com]: hello");
   });
 
   it("omits email from attribution when null", () => {
     const result = formatBufferedContext([], "Alice", "hello", undefined, null);
-    expect(result).toBe("[Alice]: hello");
+    expect(result).toBe("[Current sender: Alice]: hello");
   });
 
   it("omits email from attribution when not provided", () => {
     const result = formatBufferedContext([], "Alice", "hello");
-    expect(result).toBe("[Alice]: hello");
+    expect(result).toBe("[Current sender: Alice]: hello");
   });
 
   it("preserves message order", () => {
@@ -429,7 +429,7 @@ describe("formatBufferedContext", () => {
     const firstIdx = result.indexOf("[Alice]: first");
     const secondIdx = result.indexOf("[Bob]: second");
     const thirdIdx = result.indexOf("[Carol]: third");
-    const fourthIdx = result.indexOf("[Dave]: fourth");
+    const fourthIdx = result.indexOf("[Current sender: Dave]: fourth");
     expect(firstIdx).toBeLessThan(secondIdx);
     expect(secondIdx).toBeLessThan(thirdIdx);
     expect(thirdIdx).toBeLessThan(fourthIdx);
