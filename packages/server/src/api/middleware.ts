@@ -4,8 +4,8 @@
  * Setup mode:
  * - Before an admin account exists, only setup status/account + public paths
  *   are accessible. All other API routes return 503.
- * - After an admin exists but onboarding is incomplete, only /api/setup/*
- *   routes are accessible, and non-public setup routes require auth.
+ * - After an admin exists but onboarding is incomplete, /api/setup/* and
+ *   /api/channels/* routes are accessible, and non-public routes require auth.
  *
  * Auth: when an admin account exists, all non-public API routes require
  * a valid JWT session cookie. Role and subject are set on the Hono context.
@@ -33,7 +33,7 @@ const PUBLIC_PATHS = new Set([
 ]);
 const SETUP_PATHS_PREFIX = "/api/setup";
 const PUBLIC_SETUP_PATHS = new Set(["/api/setup/status", "/api/setup/account"]);
-const ONBOARDING_PATHS_PREFIX = "/api/channels/whatsapp";
+const ONBOARDING_PATHS_PREFIX = "/api/channels";
 
 type SettingsRepo = ReturnType<typeof createSettingsRepository>;
 
@@ -64,8 +64,8 @@ export function createAuthMiddleware(settings: SettingsRepo) {
       // DB unavailable — let public paths through, block everything else
     }
 
-    // WhatsApp pairing routes are needed during onboarding step 3 — treat
-    // them like setup paths so they're accessible before onboarding completes.
+    // Channel routes are needed during onboarding step 3 (connect channels) —
+    // treat them like setup paths so they're accessible before onboarding completes.
     const isOnboardingPath = path.startsWith(ONBOARDING_PATHS_PREFIX);
 
     // Setup bootstrap mode (no admin yet): only public paths + setup bootstrap.
