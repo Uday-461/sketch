@@ -35,9 +35,9 @@ export function createLlmCallFn(): LlmCallFn {
 
   if (useBedrock) {
     const client = new AnthropicBedrock({
-      awsAccessKey: process.env.AWS_ACCESS_KEY_ID!,
-      awsSecretKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      awsRegion: process.env.AWS_REGION!,
+      awsAccessKey: process.env.AWS_ACCESS_KEY_ID ?? "",
+      awsSecretKey: process.env.AWS_SECRET_ACCESS_KEY ?? "",
+      awsRegion: process.env.AWS_REGION ?? "us-east-1",
     });
 
     return async (prompt: string, opts?: LlmCallOptions): Promise<LlmCallResult> => {
