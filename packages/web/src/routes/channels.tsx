@@ -32,10 +32,12 @@ import {
   ArrowSquareOutIcon,
   CheckIcon,
   CopySimpleIcon,
+  DiscordLogoIcon,
   DotsThreeIcon,
   EnvelopeIcon,
   SlackLogoIcon,
   SpinnerGapIcon,
+  TelegramLogoIcon,
   WarningIcon,
   WhatsappLogoIcon,
 } from "@phosphor-icons/react";
@@ -92,6 +94,12 @@ export function ChannelsPage() {
 function PlatformCard({ channel, readOnly }: { channel: ChannelStatus; readOnly: boolean }) {
   if (channel.platform === "slack") {
     return <SlackCard channel={channel} readOnly={readOnly} />;
+  }
+  if (channel.platform === "telegram") {
+    return <TokenChannelCard channel={channel} readOnly={readOnly} platform="telegram" />;
+  }
+  if (channel.platform === "discord") {
+    return <TokenChannelCard channel={channel} readOnly={readOnly} platform="discord" />;
   }
   if (channel.platform === "email") {
     return <EmailCard channel={channel} readOnly={readOnly} />;
@@ -428,6 +436,184 @@ function EmailCard({ channel, readOnly }: { channel: ChannelStatus; readOnly: bo
             <AlertDialogTitle>Disconnect Email?</AlertDialogTitle>
             <AlertDialogDescription>
               This will remove the SMTP configuration. Verification emails will no longer be sent.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDisconnecting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={handleDisconnect} disabled={isDisconnecting}>
+              {isDisconnecting ? "Disconnecting..." : "Disconnect"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function TokenChannelCard({
+  channel,
+  readOnly,
+  platform,
+}: {
+  channel: ChannelStatus;
+  readOnly: boolean;
+  platform: "telegram" | "discord";
+}) {
+  const queryClient = useQueryClient();
+  const [showConnectDialog, setShowConnectDialog] = useState(false);
+  const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [token, setToken] = useState("");
+
+  const isConnected = channel.connected === true;
+  const label = platform === "telegram" ? "Telegram" : "Discord";
+  const Icon = platform === "telegram" ? TelegramLogoIcon : DiscordLogoIcon;
+
+  const connectMutation = useMutation({
+    mutationFn: async () => {
+      if (platform === "telegram") {
+        return api.channels.connectTelegram(token.trim());
+      }
+      return api.channels.connectDiscord(token.trim());
+    },
+    onSuccess: (data) => {
+      setToken("");
+      setShowConnectDialog(false);
+      toast.success(`${label} connected as @${data.username}.`);
+      queryClient.invalidateQueries({ queryKey: ["channels", "status"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const handleDisconnect = async () => {
+    setIsDisconnecting(true);
+    try {
+      if (platform === "telegram") {
+        await api.channels.disconnectTelegram();
+      } else {
+        await api.channels.disconnectDiscord();
+      }
+      toast.success(`${label} disconnected.`);
+      queryClient.invalidateQueries({ queryKey: ["channels", "status"] });
+    } catch {
+      toast.error(`Failed to disconnect ${label}.`);
+    } finally {
+      setIsDisconnecting(false);
+      setShowDisconnectDialog(false);
+    }
+  };
+
+  return (
+    <>
+      <div
+        className={`rounded-lg border p-4 ${isConnected ? "border-border bg-card" : "border-dashed border-border bg-card"}`}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-full bg-muted">
+              <Icon size={20} />
+            </div>
+            <span className="text-sm font-medium">{label}</span>
+          </div>
+          {!readOnly && (
+            <div className="flex items-center gap-2">
+              {!isConnected && (
+                <Button variant="outline" size="sm" onClick={() => setShowConnectDialog(true)}>
+                  Connect
+                </Button>
+              )}
+              {isConnected && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="size-7">
+                      <DotsThreeIcon size={16} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem className="text-destructive" onClick={() => setShowDisconnectDialog(true)}>
+                      Disconnect
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="ml-12 mt-2">
+          {isConnected ? (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CheckIcon size={14} className="text-success" />
+              <span>Connected{channel.botUsername ? ` — @${channel.botUsername}` : ""}</span>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">Not connected</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {platform === "telegram"
+                  ? "Create a bot via @BotFather and enter the token"
+                  : "Create an app in the Discord Developer Portal and enter the bot token"}
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+
+      <Dialog
+        open={showConnectDialog}
+        onOpenChange={(next) => {
+          if (!next) setToken("");
+          setShowConnectDialog(next);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect {label}</DialogTitle>
+            <DialogDescription>
+              {platform === "telegram"
+                ? "Open @BotFather on Telegram, create a bot, and paste the token below."
+                : "Go to the Discord Developer Portal, create an application, enable the MESSAGE_CONTENT intent under Bot settings, and paste the bot token below."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor={`${platform}-token`} className="text-xs">
+                Bot Token
+              </Label>
+              <Input
+                id={`${platform}-token`}
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={platform === "telegram" ? "123456:ABC-DEF..." : "MTIz..."}
+                disabled={connectMutation.isPending}
+                className="font-mono text-xs"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => connectMutation.mutate()}
+              disabled={!token.trim() || connectMutation.isPending}
+            >
+              {connectMutation.isPending ? (
+                <>
+                  <SpinnerGapIcon className="size-3.5 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                "Connect"
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={showDisconnectDialog} onOpenChange={setShowDisconnectDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect {label}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will disconnect the {label} bot. Users will no longer be able to message the bot via {label}.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

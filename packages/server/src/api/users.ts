@@ -31,12 +31,16 @@ const createUserSchema = z.object({
   name: z.string().min(1, "Name is required"),
   email: emailSchema.nullable().optional(),
   whatsappNumber: whatsappNumberSchema.nullable().optional(),
+  telegramUserId: z.string().nullable().optional(),
+  discordUserId: z.string().nullable().optional(),
 });
 
 const updateUserSchema = z.object({
   name: z.string().min(1, "Name is required").optional(),
   email: emailSchema.nullable().optional(),
   whatsappNumber: whatsappNumberSchema.nullable().optional(),
+  telegramUserId: z.string().nullable().optional(),
+  discordUserId: z.string().nullable().optional(),
 });
 
 const memberUpdateSchema = z.object({
@@ -88,6 +92,8 @@ export function userRoutes(users: UserRepo, deps: UserRoutesDeps) {
         name: parsed.data.name,
         email: parsed.data.email ?? undefined,
         whatsappNumber: parsed.data.whatsappNumber ?? undefined,
+        telegramUserId: parsed.data.telegramUserId ?? undefined,
+        discordUserId: parsed.data.discordUserId ?? undefined,
       });
 
       // Send verification email when email is provided
@@ -134,11 +140,17 @@ export function userRoutes(users: UserRepo, deps: UserRoutesDeps) {
     try {
       const emailValue = role === "member" ? undefined : (parsed.data as { email?: string | null }).email;
       const emailChanged = emailValue !== undefined && emailValue !== (existing.email ?? null);
+      const telegramUserId =
+        role === "member" ? undefined : (parsed.data as { telegramUserId?: string | null }).telegramUserId;
+      const discordUserId =
+        role === "member" ? undefined : (parsed.data as { discordUserId?: string | null }).discordUserId;
 
       const user = await users.update(id, {
         name: parsed.data.name,
         email: emailValue,
         whatsappNumber: parsed.data.whatsappNumber,
+        telegramUserId,
+        discordUserId,
       });
 
       // Send verification email when email changes to a non-null value

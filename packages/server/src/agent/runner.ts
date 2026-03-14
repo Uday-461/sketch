@@ -15,7 +15,7 @@ import type { Attachment } from "../files";
 import { buildMultimodalContent, formatAttachmentsForPrompt, isImageAttachment } from "../files";
 import type { Logger } from "../logger";
 import type { TaskScheduler } from "../scheduler/service";
-import type { TaskContext } from "../scheduler/types";
+import type { Platform, TaskContext } from "../scheduler/types";
 import { createCanUseTool } from "./permissions";
 import { buildSystemContext } from "./prompt";
 import { getSessionId, saveSessionId } from "./sessions";
@@ -42,7 +42,7 @@ export interface RunAgentParams {
   userName: string;
   userEmail?: string | null;
   logger: Logger;
-  platform: "slack" | "whatsapp";
+  platform: Platform;
   onMessage: (text: string) => Promise<void>;
   attachments?: Attachment[];
   threadTs?: string;
@@ -54,6 +54,13 @@ export interface RunAgentParams {
   groupContext?: {
     groupName: string;
     groupDescription?: string;
+  };
+  telegramGroupContext?: {
+    groupName: string;
+    groupDescription?: string;
+  };
+  discordChannelContext?: {
+    channelName: string;
   };
   integrationMcpServers?: Record<string, McpServerConfig>;
   findIntegrationProvider?: () => Promise<{ type: string; credentials: string } | null>;
@@ -108,6 +115,8 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
     botName: params.botName,
     channelContext: params.channelContext,
     groupContext: params.groupContext,
+    telegramGroupContext: params.telegramGroupContext,
+    discordChannelContext: params.discordChannelContext,
   });
 
   let sessionId = "";

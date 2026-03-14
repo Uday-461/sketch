@@ -16,7 +16,7 @@ interface ScheduledTaskMutationDeps {
 
 interface ScheduledTaskListItem {
   id: string;
-  platform: "slack" | "whatsapp";
+  platform: "slack" | "whatsapp" | "telegram" | "discord";
   contextType: "dm" | "channel" | "group";
   deliveryTarget: string;
   threadTs: string | null;
@@ -31,7 +31,15 @@ interface ScheduledTaskListItem {
   createdBy: string | null;
   createdAt: string;
   targetLabel: string;
-  targetKindLabel: "Slack DM" | "Slack channel" | "WhatsApp DM" | "WhatsApp group";
+  targetKindLabel:
+    | "Slack DM"
+    | "Slack channel"
+    | "WhatsApp DM"
+    | "WhatsApp group"
+    | "Telegram DM"
+    | "Telegram group"
+    | "Discord DM"
+    | "Discord channel";
   creatorName: string | null;
   scheduleLabel: string;
   canPause: boolean;
@@ -94,6 +102,10 @@ function formatScheduleLabel(row: ScheduledTaskRow): string {
 function getTargetKindLabel(row: ScheduledTaskRow): ScheduledTaskListItem["targetKindLabel"] {
   if (row.platform === "slack" && row.context_type === "channel") return "Slack channel";
   if (row.platform === "slack") return "Slack DM";
+  if (row.platform === "telegram" && row.context_type === "group") return "Telegram group";
+  if (row.platform === "telegram") return "Telegram DM";
+  if (row.platform === "discord" && row.context_type === "channel") return "Discord channel";
+  if (row.platform === "discord") return "Discord DM";
   if (row.context_type === "group") return "WhatsApp group";
   return "WhatsApp DM";
 }
@@ -158,7 +170,7 @@ async function buildTaskListItems(db: Kysely<DB>, rows: ScheduledTaskRow[]): Pro
 
     return {
       id: row.id,
-      platform: row.platform as "slack" | "whatsapp",
+      platform: row.platform as ScheduledTaskListItem["platform"],
       contextType: row.context_type as "dm" | "channel" | "group",
       deliveryTarget: row.delivery_target,
       threadTs: row.thread_ts,

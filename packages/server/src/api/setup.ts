@@ -133,6 +133,9 @@ export function setupRoutes(settings: SettingsRepo, deps: SetupDeps = {}) {
     const hasLlm = Boolean(hasAnthropic || hasBedrock || hasOpenRouter);
     const isCompleted = Boolean(row?.onboarding_completed_at);
     const currentStep = isCompleted ? 5 : hasLlm ? 5 : hasSlack ? 4 : hasIdentity ? 3 : hasAdmin ? 2 : 0;
+    const hasTelegram = Boolean(row?.telegram_bot_token?.trim());
+    const hasDiscord = Boolean(row?.discord_bot_token?.trim());
+
     return c.json({
       completed: isCompleted,
       currentStep,
@@ -140,6 +143,8 @@ export function setupRoutes(settings: SettingsRepo, deps: SetupDeps = {}) {
       orgName: row?.org_name ?? null,
       botName: row?.bot_name ?? "Sketch",
       slackConnected: hasSlack,
+      telegramConnected: hasTelegram,
+      discordConnected: hasDiscord,
       llmConnected: hasLlm,
       llmProvider:
         row?.llm_provider === "bedrock"

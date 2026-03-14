@@ -15,6 +15,8 @@ function makeUser(overrides: Record<string, unknown> = {}) {
     whatsapp_number: "+1234567890",
     created_at: "2025-01-01",
     email_verified_at: null,
+    telegram_user_id: null,
+    discord_user_id: null,
     ...overrides,
   };
 }

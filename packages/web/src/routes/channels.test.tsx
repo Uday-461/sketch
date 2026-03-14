@@ -27,6 +27,8 @@ function channelsHandler(
         channels: [
           { platform: "slack", ...slack, phoneNumber: null },
           { platform: "whatsapp", phoneNumber: null, ...whatsapp },
+          { platform: "telegram", configured: false, connected: null, phoneNumber: null, botUsername: null },
+          { platform: "discord", configured: false, connected: null, phoneNumber: null, botUsername: null },
         ],
       });
     }),
@@ -53,7 +55,8 @@ describe("ChannelsPage", () => {
       });
 
       expect(screen.getByText("Connect a Slack workspace to get started")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+      // Multiple Connect buttons exist (Slack, Telegram, Discord) — just verify at least one
+      expect(screen.getAllByRole("button", { name: "Connect" }).length).toBeGreaterThanOrEqual(1);
     });
 
     it("shows connected state with green check", async () => {
@@ -65,7 +68,8 @@ describe("ChannelsPage", () => {
       });
 
       expect(screen.getByText("Connected")).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+      // Slack is connected — its CTA text should be gone
+      expect(screen.queryByText("Connect a Slack workspace to get started")).not.toBeInTheDocument();
     });
   });
 
@@ -128,10 +132,12 @@ describe("ChannelsPage", () => {
       renderWithProviders(<ChannelsPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+        expect(screen.getByText("Connect a Slack workspace to get started")).toBeInTheDocument();
       });
 
-      await user.click(screen.getByRole("button", { name: "Connect" }));
+      // Click the first Connect button (Slack card renders first)
+      const connectButtons = screen.getAllByRole("button", { name: "Connect" });
+      await user.click(connectButtons[0]);
 
       await waitFor(() => {
         expect(screen.getByText("Connect Slack")).toBeInTheDocument();
@@ -148,18 +154,20 @@ describe("ChannelsPage", () => {
       renderWithProviders(<ChannelsPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+        expect(screen.getByText("Connect a Slack workspace to get started")).toBeInTheDocument();
       });
 
-      await user.click(screen.getByRole("button", { name: "Connect" }));
+      // Click the first Connect button (Slack card)
+      const connectButtons = screen.getAllByRole("button", { name: "Connect" });
+      await user.click(connectButtons[0]);
 
       await waitFor(() => {
         expect(screen.getByText("Connect Slack")).toBeInTheDocument();
       });
 
-      // The Connect button inside the dialog (second one)
-      const connectButtons = screen.getAllByRole("button", { name: "Connect" });
-      const dialogConnectBtn = connectButtons[connectButtons.length - 1];
+      // The Connect button inside the dialog is the last one
+      const allConnectButtons = screen.getAllByRole("button", { name: "Connect" });
+      const dialogConnectBtn = allConnectButtons[allConnectButtons.length - 1];
       expect(dialogConnectBtn).toBeDisabled();
     });
   });

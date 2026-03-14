@@ -7,6 +7,8 @@ export interface UsersTable {
   email_verified_at: string | null;
   slack_user_id: string | null;
   whatsapp_number: string | null;
+  telegram_user_id: string | null;
+  discord_user_id: string | null;
   created_at: Generated<string>;
 }
 
@@ -51,6 +53,8 @@ export interface SettingsTable {
   aws_secret_access_key: string | null;
   aws_region: string | null;
   openrouter_api_key: string | null;
+  telegram_bot_token: string | null;
+  discord_bot_token: string | null;
   jwt_secret: string | null;
   smtp_host: string | null;
   smtp_port: number | null;

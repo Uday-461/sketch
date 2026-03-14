@@ -19,17 +19,25 @@ import { randomUUID } from "node:crypto";
 import { Cron } from "croner";
 import type { Kysely } from "kysely";
 import type { McpServerConfig, runAgent } from "../agent/runner";
-import { ensureChannelWorkspace, ensureGroupWorkspace, ensureWorkspace } from "../agent/workspace";
+import {
+  ensureChannelWorkspace,
+  ensureDiscordChannelWorkspace,
+  ensureGroupWorkspace,
+  ensureTelegramGroupWorkspace,
+  ensureWorkspace,
+} from "../agent/workspace";
 import type { Config } from "../config";
 import { createScheduledTaskRepository } from "../db/repositories/scheduled-tasks";
 import type { ScheduledTaskRow } from "../db/repositories/scheduled-tasks";
 import type { createSettingsRepository } from "../db/repositories/settings";
 import type { DB } from "../db/schema";
+import type { DiscordBot } from "../discord/bot";
 import type { Logger } from "../logger";
 import type { QueueManager } from "../queue";
 import type { SlackBot } from "../slack/bot";
+import type { TelegramBot } from "../telegram/bot";
 import type { WhatsAppBot } from "../whatsapp/bot";
-import type { ScheduledTask } from "./types";
+import type { Platform, ScheduledTask } from "./types";
 
 export interface TaskSchedulerDeps {
   db: Kysely<DB>;
@@ -38,6 +46,8 @@ export interface TaskSchedulerDeps {
   queueManager: QueueManager;
   getSlack: () => SlackBot | null;
   whatsapp: WhatsAppBot;
+  getTelegram: () => TelegramBot | null;
+  getDiscord: () => DiscordBot | null;
   settingsRepo: ReturnType<typeof createSettingsRepository>;
   runAgent: typeof runAgent;
   buildMcpServers: (email: string | null) => Promise<Record<string, McpServerConfig>>;
@@ -122,14 +132,33 @@ export class TaskScheduler {
   }
 
   async executeTask(task: ScheduledTaskRow): Promise<void> {
-    const { config, logger, queueManager, getSlack, whatsapp, settingsRepo, buildMcpServers, findIntegrationProvider } =
-      this.deps;
+    const {
+      config,
+      logger,
+      queueManager,
+      getSlack,
+      whatsapp,
+      getTelegram,
+      getDiscord,
+      settingsRepo,
+      buildMcpServers,
+      findIntegrationProvider,
+    } = this.deps;
 
     let workspaceDir: string;
-    if (task.context_type === "channel") {
+    if (task.platform === "slack" && task.context_type === "channel") {
       workspaceDir = await ensureChannelWorkspace(config, task.delivery_target);
-    } else if (task.context_type === "group") {
+    } else if (task.platform === "whatsapp" && task.context_type === "group") {
       workspaceDir = await ensureGroupWorkspace(config, task.delivery_target);
+    } else if (task.platform === "telegram" && task.context_type === "group") {
+      workspaceDir = await ensureTelegramGroupWorkspace(config, task.delivery_target);
+    } else if (task.platform === "discord" && task.context_type === "channel") {
+      const parts = task.delivery_target.split(":");
+      workspaceDir = await ensureDiscordChannelWorkspace(
+        config,
+        parts[0] ?? task.delivery_target,
+        parts[1] ?? task.delivery_target,
+      );
     } else {
       const userId = task.created_by ?? task.delivery_target;
       workspaceDir = await ensureWorkspace(config, userId);
@@ -154,6 +183,24 @@ export class TaskScheduler {
           await slack.postMessage(task.delivery_target, text);
         };
       }
+    } else if (task.platform === "telegram") {
+      const telegram = getTelegram();
+      if (!telegram?.isConnected) {
+        logger.warn({ taskId: task.id }, "TaskScheduler: Telegram bot unavailable, skipping task");
+        return;
+      }
+      onMessage = async (text) => {
+        await telegram.sendText(task.delivery_target, text);
+      };
+    } else if (task.platform === "discord") {
+      const discord = getDiscord();
+      if (!discord?.isConnected) {
+        logger.warn({ taskId: task.id }, "TaskScheduler: Discord bot unavailable, skipping task");
+        return;
+      }
+      onMessage = async (text) => {
+        await discord.sendText(task.delivery_target, text);
+      };
     } else {
       if (!whatsapp.isConnected) {
         logger.warn({ taskId: task.id }, "TaskScheduler: WhatsApp not connected, skipping task");
@@ -171,6 +218,11 @@ export class TaskScheduler {
       workspaceKey = userId;
     } else if (task.platform === "slack" && task.context_type === "channel") {
       workspaceKey = `channel-${task.delivery_target}`;
+    } else if (task.platform === "telegram" && task.context_type === "group") {
+      workspaceKey = `tg-group-${task.delivery_target}`;
+    } else if (task.platform === "discord" && task.context_type === "channel") {
+      const parts = task.delivery_target.split(":");
+      workspaceKey = `discord-${parts[0] ?? task.delivery_target}-${parts[1] ?? task.delivery_target}`;
     } else {
       const groupId = task.delivery_target.replace("@g.us", "");
       workspaceKey = `wa-group-${groupId}`;
@@ -185,6 +237,10 @@ export class TaskScheduler {
       } else {
         queueKey = task.delivery_target;
       }
+    } else if (task.platform === "telegram" && task.context_type === "group") {
+      queueKey = `tg-group-${task.delivery_target}`;
+    } else if (task.platform === "discord" && task.context_type === "channel") {
+      queueKey = `discord-${task.delivery_target}`;
     } else {
       const groupId = task.delivery_target.replace("@g.us", "");
       queueKey = `wa-group-${groupId}`;
@@ -215,7 +271,7 @@ export class TaskScheduler {
           workspaceDir,
           userName: "System",
           logger,
-          platform: task.platform as "slack" | "whatsapp",
+          platform: task.platform as Platform,
           onMessage,
           threadTs: threadKey,
           orgName: settingsRow?.org_name,
@@ -243,7 +299,7 @@ export class TaskScheduler {
   }
 
   async addTask(params: {
-    platform: "slack" | "whatsapp";
+    platform: Platform;
     contextType: "dm" | "channel" | "group";
     deliveryTarget: string;
     threadTs?: string | null;
@@ -339,7 +395,7 @@ export class TaskScheduler {
   private toScheduledTask(row: ScheduledTaskRow): ScheduledTask {
     return {
       id: row.id,
-      platform: row.platform as "slack" | "whatsapp",
+      platform: row.platform as Platform,
       contextType: row.context_type as "dm" | "channel" | "group",
       deliveryTarget: row.delivery_target,
       threadTs: row.thread_ts,

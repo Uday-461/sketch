@@ -19,12 +19,14 @@ export interface User {
   email_verified_at: string | null;
   slack_user_id: string | null;
   whatsapp_number: string | null;
+  telegram_user_id: string | null;
+  discord_user_id: string | null;
   created_at: string;
 }
 
 export interface ScheduledTaskListItem {
   id: string;
-  platform: "slack" | "whatsapp";
+  platform: "slack" | "whatsapp" | "telegram" | "discord";
   contextType: "dm" | "channel" | "group";
   deliveryTarget: string;
   threadTs: string | null;
@@ -39,7 +41,15 @@ export interface ScheduledTaskListItem {
   createdBy: string | null;
   createdAt: string;
   targetLabel: string;
-  targetKindLabel: "Slack DM" | "Slack channel" | "WhatsApp DM" | "WhatsApp group";
+  targetKindLabel:
+    | "Slack DM"
+    | "Slack channel"
+    | "WhatsApp DM"
+    | "WhatsApp group"
+    | "Telegram DM"
+    | "Telegram group"
+    | "Discord DM"
+    | "Discord channel";
   creatorName: string | null;
   scheduleLabel: string;
   canPause: boolean;
@@ -67,10 +77,11 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export interface ChannelStatus {
-  platform: "slack" | "whatsapp" | "email";
+  platform: "slack" | "whatsapp" | "telegram" | "discord" | "email";
   configured: boolean;
   connected: boolean | null;
   phoneNumber?: string | null;
+  botUsername?: string | null;
   outboundOnly?: boolean;
 }
 
@@ -81,6 +92,8 @@ export interface SetupStatus {
   orgName: string | null;
   botName: string;
   slackConnected: boolean;
+  telegramConnected: boolean;
+  discordConnected: boolean;
   llmConnected: boolean;
   llmProvider: "anthropic" | "bedrock" | "openrouter" | null;
 }
@@ -202,6 +215,24 @@ export const api = {
     deleteEmail() {
       return request<{ success: boolean }>("/api/channels/email", { method: "DELETE" });
     },
+    connectTelegram(token: string) {
+      return request<{ success: boolean; username: string }>("/api/channels/telegram", {
+        method: "POST",
+        body: JSON.stringify({ token }),
+      });
+    },
+    disconnectTelegram() {
+      return request<{ success: boolean }>("/api/channels/telegram", { method: "DELETE" });
+    },
+    connectDiscord(token: string) {
+      return request<{ success: boolean; username: string }>("/api/channels/discord", {
+        method: "POST",
+        body: JSON.stringify({ token }),
+      });
+    },
+    disconnectDiscord() {
+      return request<{ success: boolean }>("/api/channels/discord", { method: "DELETE" });
+    },
   },
   whatsapp: {
     status() {
@@ -223,13 +254,28 @@ export const api = {
     list() {
       return request<{ users: User[] }>("/api/users");
     },
-    create(data: { name: string; email?: string | null; whatsappNumber?: string | null }) {
+    create(data: {
+      name: string;
+      email?: string | null;
+      whatsappNumber?: string | null;
+      telegramUserId?: string | null;
+      discordUserId?: string | null;
+    }) {
       return request<{ user: User; verificationSent?: boolean }>("/api/users", {
         method: "POST",
         body: JSON.stringify(data),
       });
     },
-    update(id: string, data: { name?: string; email?: string | null; whatsappNumber?: string | null }) {
+    update(
+      id: string,
+      data: {
+        name?: string;
+        email?: string | null;
+        whatsappNumber?: string | null;
+        telegramUserId?: string | null;
+        discordUserId?: string | null;
+      },
+    ) {
       return request<{ user: User; verificationSent?: boolean }>(`/api/users/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),

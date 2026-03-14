@@ -4,9 +4,11 @@ import {
   ArrowSquareOutIcon,
   CheckIcon,
   CopySimpleIcon,
+  DiscordLogoIcon,
   InfoIcon,
   SlackLogoIcon,
   SpinnerGapIcon,
+  TelegramLogoIcon,
   WhatsappLogoIcon,
 } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
@@ -34,11 +36,19 @@ interface StepConnectChannelsProps {
   initialSlackWorkspace?: string;
   initialWhatsappConnected?: boolean;
   initialWhatsappPhone?: string;
+  initialTelegramConnected?: boolean;
+  initialTelegramUsername?: string;
+  initialDiscordConnected?: boolean;
+  initialDiscordUsername?: string;
   onNext: (data: {
     slackConnected: boolean;
     slackWorkspace?: string;
     whatsappConnected: boolean;
     whatsappPhone?: string;
+    telegramConnected: boolean;
+    telegramUsername?: string;
+    discordConnected: boolean;
+    discordUsername?: string;
   }) => void;
 }
 
@@ -48,6 +58,10 @@ export function StepConnectChannels({
   initialSlackWorkspace,
   initialWhatsappConnected,
   initialWhatsappPhone,
+  initialTelegramConnected,
+  initialTelegramUsername,
+  initialDiscordConnected,
+  initialDiscordUsername,
   onNext,
 }: StepConnectChannelsProps) {
   const [channels, setChannels] = useState<ChannelState>({
@@ -60,6 +74,14 @@ export function StepConnectChannels({
 
   const [whatsappConnected, setWhatsappConnected] = useState(Boolean(initialWhatsappConnected));
   const [whatsappPhone, setWhatsappPhone] = useState<string | undefined>(initialWhatsappPhone);
+
+  const [telegramConnected, setTelegramConnected] = useState(Boolean(initialTelegramConnected));
+  const [telegramUsername, setTelegramUsername] = useState<string | undefined>(initialTelegramUsername);
+  const [telegramToken, setTelegramToken] = useState("");
+
+  const [discordConnected, setDiscordConnected] = useState(Boolean(initialDiscordConnected));
+  const [discordUsername, setDiscordUsername] = useState<string | undefined>(initialDiscordUsername);
+  const [discordToken, setDiscordToken] = useState("");
 
   const [slackBotToken, setSlackBotToken] = useState("");
   const [slackAppToken, setSlackAppToken] = useState("");
@@ -150,7 +172,35 @@ export function StepConnectChannels({
     }
   };
 
-  const canContinue = channels.slack.connected || whatsappConnected;
+  const telegramConnectMutation = useMutation({
+    mutationFn: async () => {
+      const result = await api.channels.connectTelegram(telegramToken.trim());
+      return result;
+    },
+    onSuccess: (result) => {
+      setTelegramConnected(true);
+      setTelegramUsername(result.username);
+      setTelegramToken("");
+      toast.success(`Telegram connected as @${result.username}.`);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const discordConnectMutation = useMutation({
+    mutationFn: async () => {
+      const result = await api.channels.connectDiscord(discordToken.trim());
+      return result;
+    },
+    onSuccess: (result) => {
+      setDiscordConnected(true);
+      setDiscordUsername(result.username);
+      setDiscordToken("");
+      toast.success(`Discord connected as @${result.username}.`);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const canContinue = channels.slack.connected || whatsappConnected || telegramConnected || discordConnected;
 
   const handleContinue = () => {
     onNext({
@@ -158,6 +208,10 @@ export function StepConnectChannels({
       slackWorkspace: channels.slack.workspaceName,
       whatsappConnected,
       whatsappPhone,
+      telegramConnected,
+      telegramUsername,
+      discordConnected,
+      discordUsername,
     });
   };
 
@@ -315,6 +369,149 @@ export function StepConnectChannels({
               </div>
               <WhatsAppQR onConnected={handleWhatsAppConnected} />
             </>
+          )}
+        </div>
+        {/* Telegram Card */}
+        <div className="rounded-lg border bg-card p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <TelegramLogoIcon className="size-5" />
+              <span className="text-sm font-medium">Telegram</span>
+            </div>
+            {telegramConnected ? (
+              <Badge variant="secondary" className="gap-1 border-0 bg-success/10 text-success">
+                <CheckIcon weight="bold" className="size-3" />
+                Connected — @{telegramUsername}
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="text-muted-foreground">
+                Not connected
+              </Badge>
+            )}
+          </div>
+
+          {telegramConnected ? (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await api.channels.disconnectTelegram();
+                  setTelegramConnected(false);
+                  setTelegramUsername(undefined);
+                } catch {
+                  toast.error("Failed to disconnect Telegram.");
+                }
+              }}
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Disconnect
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Open @BotFather on Telegram, create a bot, and paste the token below.
+              </p>
+              <div className="space-y-1.5">
+                <Label htmlFor="telegramToken" className="text-xs">
+                  Telegram Bot Token
+                </Label>
+                <Input
+                  id="telegramToken"
+                  value={telegramToken}
+                  onChange={(e) => setTelegramToken(e.target.value)}
+                  placeholder="123456:ABC-DEF..."
+                  disabled={telegramConnectMutation.isPending}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => telegramConnectMutation.mutate()}
+                disabled={!telegramToken.trim() || telegramConnectMutation.isPending}
+              >
+                {telegramConnectMutation.isPending ? (
+                  <>
+                    <SpinnerGapIcon className="size-3.5 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  "Connect"
+                )}
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Discord Card */}
+        <div className="rounded-lg border bg-card p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <DiscordLogoIcon className="size-5" />
+              <span className="text-sm font-medium">Discord</span>
+            </div>
+            {discordConnected ? (
+              <Badge variant="secondary" className="gap-1 border-0 bg-success/10 text-success">
+                <CheckIcon weight="bold" className="size-3" />
+                Connected — @{discordUsername}
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="text-muted-foreground">
+                Not connected
+              </Badge>
+            )}
+          </div>
+
+          {discordConnected ? (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await api.channels.disconnectDiscord();
+                  setDiscordConnected(false);
+                  setDiscordUsername(undefined);
+                } catch {
+                  toast.error("Failed to disconnect Discord.");
+                }
+              }}
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Disconnect
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Create an app in the Discord Developer Portal, enable MESSAGE_CONTENT intent, and paste the bot token.
+              </p>
+              <div className="space-y-1.5">
+                <Label htmlFor="discordToken" className="text-xs">
+                  Discord Bot Token
+                </Label>
+                <Input
+                  id="discordToken"
+                  value={discordToken}
+                  onChange={(e) => setDiscordToken(e.target.value)}
+                  placeholder="MTIz..."
+                  disabled={discordConnectMutation.isPending}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => discordConnectMutation.mutate()}
+                disabled={!discordToken.trim() || discordConnectMutation.isPending}
+              >
+                {discordConnectMutation.isPending ? (
+                  <>
+                    <SpinnerGapIcon className="size-3.5 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  "Connect"
+                )}
+              </Button>
+            </div>
           )}
         </div>
       </div>

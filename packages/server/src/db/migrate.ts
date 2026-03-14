@@ -20,6 +20,7 @@ import * as m013 from "./migrations/013-scheduled-tasks";
 import * as m014 from "./migrations/014-chat-sessions-thread-key-sentinel";
 import * as m015 from "./migrations/015-whatsapp-groups";
 import * as m016 from "./migrations/016-settings-openrouter";
+import * as m017 from "./migrations/017-telegram-discord";
 import type { DB } from "./schema";
 
 export async function runMigrations(db: Kysely<DB>): Promise<void> {
@@ -44,6 +45,7 @@ export async function runMigrations(db: Kysely<DB>): Promise<void> {
           "014-chat-sessions-thread-key-sentinel": m014,
           "015-whatsapp-groups": m015,
           "016-settings-openrouter": m016,
+          "017-telegram-discord": m017,
         };
       },
     },

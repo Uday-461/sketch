@@ -16,6 +16,14 @@ export function createUserRepository(db: Kysely<DB>) {
       return db.selectFrom("users").selectAll().where("whatsapp_number", "=", whatsappNumber).executeTakeFirst();
     },
 
+    async findByTelegramId(telegramUserId: string) {
+      return db.selectFrom("users").selectAll().where("telegram_user_id", "=", telegramUserId).executeTakeFirst();
+    },
+
+    async findByDiscordId(discordUserId: string) {
+      return db.selectFrom("users").selectAll().where("discord_user_id", "=", discordUserId).executeTakeFirst();
+    },
+
     async findByEmail(email: string) {
       return db.selectFrom("users").selectAll().where("email", "=", email).executeTakeFirst();
     },
@@ -28,6 +36,8 @@ export function createUserRepository(db: Kysely<DB>) {
       name: string;
       slackUserId?: string;
       whatsappNumber?: string;
+      telegramUserId?: string;
+      discordUserId?: string;
       email?: string | null;
       emailVerified?: boolean;
     }) {
@@ -39,6 +49,8 @@ export function createUserRepository(db: Kysely<DB>) {
           name: data.name,
           slack_user_id: data.slackUserId ?? null,
           whatsapp_number: data.whatsappNumber ?? null,
+          telegram_user_id: data.telegramUserId ?? null,
+          discord_user_id: data.discordUserId ?? null,
           email: data.email ?? null,
           email_verified_at: data.email && data.emailVerified ? new Date().toISOString() : null,
         })
@@ -55,6 +67,8 @@ export function createUserRepository(db: Kysely<DB>) {
         emailVerified?: boolean;
         whatsappNumber?: string | null;
         slackUserId?: string | null;
+        telegramUserId?: string | null;
+        discordUserId?: string | null;
       },
     ) {
       const values: Record<string, unknown> = {};
@@ -75,6 +89,8 @@ export function createUserRepository(db: Kysely<DB>) {
       }
       if (data.whatsappNumber !== undefined) values.whatsapp_number = data.whatsappNumber;
       if (data.slackUserId !== undefined) values.slack_user_id = data.slackUserId;
+      if (data.telegramUserId !== undefined) values.telegram_user_id = data.telegramUserId;
+      if (data.discordUserId !== undefined) values.discord_user_id = data.discordUserId;
 
       if (Object.keys(values).length > 0) {
         await db.updateTable("users").set(values).where("id", "=", id).execute();

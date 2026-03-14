@@ -25,11 +25,13 @@ import { useDashboardAuth } from "@/routes/dashboard";
 import {
   CaretRightIcon,
   ClockIcon,
+  DiscordLogoIcon,
   DotsThreeIcon,
   PauseIcon,
   PlayIcon,
   SlackLogoIcon,
   SpinnerGapIcon,
+  TelegramLogoIcon,
   TrashIcon,
   WhatsappLogoIcon,
 } from "@phosphor-icons/react";
@@ -192,14 +194,17 @@ export function ScheduledTasksPage() {
   );
 }
 
-function PlatformIcon({ platform }: { platform: "slack" | "whatsapp" }) {
+function PlatformIcon({ platform }: { platform: "slack" | "whatsapp" | "telegram" | "discord" }) {
+  const icons = {
+    slack: SlackLogoIcon,
+    whatsapp: WhatsappLogoIcon,
+    telegram: TelegramLogoIcon,
+    discord: DiscordLogoIcon,
+  };
+  const Icon = icons[platform] ?? SlackLogoIcon;
   return (
     <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted">
-      {platform === "slack" ? (
-        <SlackLogoIcon size={18} className="text-muted-foreground" />
-      ) : (
-        <WhatsappLogoIcon size={18} className="text-muted-foreground" />
-      )}
+      <Icon size={18} className="text-muted-foreground" />
     </div>
   );
 }

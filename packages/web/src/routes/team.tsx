@@ -34,12 +34,14 @@ import { type AuthContext, useDashboardAuth } from "@/routes/dashboard";
 import {
   CheckCircleIcon,
   ClockIcon,
+  DiscordLogoIcon,
   DotsThreeIcon,
   EnvelopeIcon,
   PencilSimpleIcon,
   PlusIcon,
   SlackLogoIcon,
   SpinnerGapIcon,
+  TelegramLogoIcon,
   UserMinusIcon,
   UsersThreeIcon,
   WhatsappLogoIcon,
@@ -55,16 +57,22 @@ import { dashboardRoute } from "./dashboard";
 const optionalEmail = z.literal("").or(emailSchema);
 const optionalPhone = z.literal("").or(whatsappNumberSchema);
 
+const optionalString = z.literal("").or(z.string().min(1));
+
 const addMemberSchema = z.object({
   name: z.string().min(1),
   email: emailSchema,
   whatsappNumber: optionalPhone,
+  telegramUserId: optionalString,
+  discordUserId: optionalString,
 });
 
 const editMemberSchema = z.object({
   name: z.string().min(1),
   email: optionalEmail,
   whatsappNumber: optionalPhone,
+  telegramUserId: optionalString,
+  discordUserId: optionalString,
 });
 
 export const teamRoute = createRoute({
@@ -236,6 +244,18 @@ function MemberRow({
             activeColor="#25D366"
           />
           <ChannelBadge
+            icon={<TelegramLogoIcon size={16} />}
+            active={!!user.telegram_user_id}
+            tooltip={user.telegram_user_id ? "Telegram connected" : "Telegram not connected"}
+            activeColor="#26A5E4"
+          />
+          <ChannelBadge
+            icon={<DiscordLogoIcon size={16} />}
+            active={!!user.discord_user_id}
+            tooltip={user.discord_user_id ? "Discord connected" : "Discord not connected"}
+            activeColor="#5865F2"
+          />
+          <ChannelBadge
             icon={<EnvelopeIcon size={16} />}
             active={!!user.email}
             tooltip={
@@ -351,6 +371,8 @@ function AddMemberDialog({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [telegramId, setTelegramId] = useState("");
+  const [discordId, setDiscordId] = useState("");
   const [error, setError] = useState("");
 
   const createMutation = useMutation({
@@ -359,6 +381,8 @@ function AddMemberDialog({
         name: name.trim(),
         email: email.trim() || null,
         whatsappNumber: phone.trim() || null,
+        telegramUserId: telegramId.trim() || null,
+        discordUserId: discordId.trim() || null,
       }),
     onSuccess: (data) => {
       if (data.verificationSent) {
@@ -382,6 +406,8 @@ function AddMemberDialog({
     setName("");
     setEmail("");
     setPhone("");
+    setTelegramId("");
+    setDiscordId("");
     setError("");
     onOpenChange(false);
   };
@@ -390,6 +416,8 @@ function AddMemberDialog({
     name: name.trim(),
     email: email.trim(),
     whatsappNumber: phone.trim(),
+    telegramUserId: telegramId.trim(),
+    discordUserId: discordId.trim(),
   }).success;
 
   return (
@@ -442,6 +470,26 @@ function AddMemberDialog({
             />
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="add-telegram">Telegram User ID</Label>
+            <Input
+              id="add-telegram"
+              value={telegramId}
+              onChange={(e) => setTelegramId(e.target.value)}
+              placeholder="123456789"
+              disabled={createMutation.isPending}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="add-discord">Discord User ID</Label>
+            <Input
+              id="add-discord"
+              value={discordId}
+              onChange={(e) => setDiscordId(e.target.value)}
+              placeholder="123456789012345678"
+              disabled={createMutation.isPending}
+            />
+          </div>
         </div>
 
         <DialogFooter>
@@ -480,6 +528,8 @@ function EditMemberDialog({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [telegramId, setTelegramId] = useState("");
+  const [discordId, setDiscordId] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -487,6 +537,8 @@ function EditMemberDialog({
       setName(user.name);
       setEmail(user.email ?? "");
       setPhone(user.whatsapp_number ?? "");
+      setTelegramId(user.telegram_user_id ?? "");
+      setDiscordId(user.discord_user_id ?? "");
       setError("");
     }
   }, [user]);
@@ -497,6 +549,8 @@ function EditMemberDialog({
         name: name.trim(),
         ...(isMember ? {} : { email: email.trim() || null }),
         whatsappNumber: phone.trim() || null,
+        telegramUserId: telegramId.trim() || null,
+        discordUserId: discordId.trim() || null,
       }),
     onSuccess: (data) => {
       if (data.verificationSent) {
@@ -531,10 +585,18 @@ function EditMemberDialog({
     user &&
     (name.trim() !== user.name ||
       (email.trim() || null) !== (user.email ?? null) ||
-      (phone.trim() || null) !== (user.whatsapp_number ?? null));
+      (phone.trim() || null) !== (user.whatsapp_number ?? null) ||
+      (telegramId.trim() || null) !== (user.telegram_user_id ?? null) ||
+      (discordId.trim() || null) !== (user.discord_user_id ?? null));
   const canSubmit =
     isDirty &&
-    editMemberSchema.safeParse({ name: name.trim(), email: email.trim(), whatsappNumber: phone.trim() }).success;
+    editMemberSchema.safeParse({
+      name: name.trim(),
+      email: email.trim(),
+      whatsappNumber: phone.trim(),
+      telegramUserId: telegramId.trim(),
+      discordUserId: discordId.trim(),
+    }).success;
 
   return (
     <Dialog open={!!user} onOpenChange={onOpenChange}>
@@ -620,6 +682,26 @@ function EditMemberDialog({
                 This number will be linked to {user?.name}'s identity on WhatsApp.
               </p>
             ) : null}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-telegram">Telegram User ID</Label>
+            <Input
+              id="edit-telegram"
+              value={telegramId}
+              onChange={(e) => setTelegramId(e.target.value)}
+              placeholder="123456789"
+              disabled={updateMutation.isPending}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-discord">Discord User ID</Label>
+            <Input
+              id="edit-discord"
+              value={discordId}
+              onChange={(e) => setDiscordId(e.target.value)}
+              placeholder="123456789012345678"
+              disabled={updateMutation.isPending}
+            />
           </div>
         </div>
 

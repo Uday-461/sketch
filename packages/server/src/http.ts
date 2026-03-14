@@ -25,15 +25,23 @@ import { createMcpServerRepository } from "./db/repositories/mcp-servers";
 import { createSettingsRepository } from "./db/repositories/settings";
 import { createUserRepository } from "./db/repositories/users";
 import type { DB } from "./db/schema";
+import type { DiscordBot } from "./discord/bot";
 import type { TaskScheduler } from "./scheduler/service";
 import type { SlackBot } from "./slack/bot";
+import type { TelegramBot } from "./telegram/bot";
 import type { WhatsAppBot } from "./whatsapp/bot";
 
 interface AppDeps {
   whatsapp?: WhatsAppBot;
   getSlack?: () => SlackBot | null;
+  getTelegram?: () => TelegramBot | null;
+  getDiscord?: () => DiscordBot | null;
   onSlackTokensUpdated?: (tokens?: { botToken: string; appToken: string }) => Promise<void>;
   onSlackDisconnect?: () => Promise<void>;
+  onTelegramTokenUpdated?: (token: string) => Promise<void>;
+  onTelegramDisconnect?: () => Promise<void>;
+  onDiscordTokenUpdated?: (token: string) => Promise<void>;
+  onDiscordDisconnect?: () => Promise<void>;
   onLlmSettingsUpdated?: () => Promise<void>;
   onSmtpUpdated?: () => Promise<void>;
   scheduler?: Pick<TaskScheduler, "pauseTask" | "resumeTask" | "removeTask">;
@@ -73,7 +81,13 @@ export function createApp(db: Kysely<DB>, config: Config, deps?: AppDeps) {
     channelRoutes({
       whatsapp: deps?.whatsapp,
       getSlack: deps?.getSlack,
+      getTelegram: deps?.getTelegram,
+      getDiscord: deps?.getDiscord,
       onSlackDisconnect: deps?.onSlackDisconnect,
+      onTelegramTokenUpdated: deps?.onTelegramTokenUpdated,
+      onTelegramDisconnect: deps?.onTelegramDisconnect,
+      onDiscordTokenUpdated: deps?.onDiscordTokenUpdated,
+      onDiscordDisconnect: deps?.onDiscordDisconnect,
       settings,
       onSmtpUpdated: deps?.onSmtpUpdated,
     }),

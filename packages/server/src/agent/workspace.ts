@@ -20,3 +20,19 @@ export async function ensureGroupWorkspace(config: Config, groupJid: string): Pr
   await mkdir(workspaceDir, { recursive: true });
   return workspaceDir;
 }
+
+export async function ensureTelegramGroupWorkspace(config: Config, chatId: string): Promise<string> {
+  const workspaceDir = join(config.DATA_DIR, "workspaces", `tg-group-${chatId}`);
+  await mkdir(workspaceDir, { recursive: true });
+  return workspaceDir;
+}
+
+export async function ensureDiscordChannelWorkspace(
+  config: Config,
+  guildId: string,
+  channelId: string,
+): Promise<string> {
+  const workspaceDir = join(config.DATA_DIR, "workspaces", `discord-${guildId}-${channelId}`);
+  await mkdir(workspaceDir, { recursive: true });
+  return workspaceDir;
+}

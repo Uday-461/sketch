@@ -7,9 +7,11 @@
  * delivery metadata without requiring the agent to supply it explicitly.
  */
 
+export type Platform = "slack" | "whatsapp" | "telegram" | "discord";
+
 export interface ScheduledTask {
   id: string;
-  platform: "slack" | "whatsapp";
+  platform: Platform;
   contextType: "dm" | "channel" | "group";
   deliveryTarget: string;
   threadTs: string | null;
@@ -26,7 +28,7 @@ export interface ScheduledTask {
 }
 
 export interface TaskContext {
-  platform: "slack" | "whatsapp";
+  platform: Platform;
   contextType: "dm" | "channel" | "group";
   deliveryTarget: string;
   createdBy: string;
