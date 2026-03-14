@@ -226,7 +226,10 @@ async function enrichTextDocument(
         .execute();
     }
 
-    logger.debug({ fileId: file.id, fileName: file.file_name, tags: taggingResult.tags.length }, "Structured file tagged (no chunking/embedding)");
+    logger.debug(
+      { fileId: file.id, fileName: file.file_name, tags: taggingResult.tags.length },
+      "Structured file tagged (no chunking/embedding)",
+    );
     return;
   }
 

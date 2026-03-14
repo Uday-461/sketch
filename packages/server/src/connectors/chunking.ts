@@ -83,10 +83,7 @@ export function chunkText(text: string, opts?: ChunkOptions): Chunk[] {
         const sentences = paraWithSep.split(/(?<=[.!?])\s+/);
 
         // If sentence splitting didn't help (e.g. CSV, code), split by lines
-        const segments =
-          sentences.length <= 1 && paraWithSep.includes("\n")
-            ? paraWithSep.split("\n")
-            : sentences;
+        const segments = sentences.length <= 1 && paraWithSep.includes("\n") ? paraWithSep.split("\n") : sentences;
 
         for (const segment of segments) {
           // If a single segment still exceeds maxChars, hard-split by character
