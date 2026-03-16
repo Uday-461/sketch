@@ -21,14 +21,15 @@ export async function up(db: Kysely<unknown>): Promise<void> {
    * recreate the table. Postgres would allow ALTER COLUMN, but this approach works
    * for both dialects.
    */
-  await sql`CREATE TABLE chat_sessions_new (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    workspace_key TEXT NOT NULL,
-    thread_key TEXT NOT NULL DEFAULT '',
-    session_id TEXT NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-    UNIQUE(workspace_key, thread_key)
-  )`.execute(db);
+  await db.schema
+    .createTable("chat_sessions_new")
+    .addColumn("id", "integer", (col) => col.primaryKey().autoIncrement())
+    .addColumn("workspace_key", "text", (col) => col.notNull())
+    .addColumn("thread_key", "text", (col) => col.notNull().defaultTo(""))
+    .addColumn("session_id", "text", (col) => col.notNull())
+    .addColumn("updated_at", "text", (col) => col.notNull().defaultTo(sql`CURRENT_TIMESTAMP`))
+    .addUniqueConstraint("chat_sessions_workspace_thread_uidx", ["workspace_key", "thread_key"])
+    .execute();
 
   await sql`INSERT INTO chat_sessions_new (id, workspace_key, thread_key, session_id, updated_at)
     SELECT id, workspace_key, thread_key, session_id, updated_at FROM chat_sessions`.execute(db);
