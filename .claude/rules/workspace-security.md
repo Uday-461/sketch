@@ -24,9 +24,7 @@
 ## Workspace Directories
 - Per-user DM: `data/workspaces/{user_id}/`
 - Per-channel: `data/workspaces/channel-{channelId}/`
-- Per-group (WhatsApp): `data/workspaces/wa-group-{jid}/`
-- Per-group (Telegram): `data/workspaces/tg-group-{chatId}/`
-- Per-channel (Discord): `data/workspaces/discord-{guildId}-{channelId}/`
+- Per-group: `data/workspaces/wa-group-{jid}/`
 
 ## Session Persistence
 - Session IDs stored in `chat_sessions` DB table (not filesystem)

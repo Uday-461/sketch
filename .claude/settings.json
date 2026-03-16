@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=\"$TOOL_INPUT_file_path\"; if echo \"$file\" | grep -qE '\\.(ts|tsx)$'; then pnpm biome format --write \"$file\" 2>/dev/null; fi; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "file=\"$TOOL_INPUT_file_path\"; if echo \"$file\" | grep -qE '\\.(ts|tsx)$' && grep -n 'console\\.log' \"$file\" 2>/dev/null; then echo '⚠️  console.log detected — use pino logger instead (see CLAUDE.md)'; fi; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}
