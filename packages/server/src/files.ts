@@ -104,6 +104,92 @@ export async function downloadSlackFile(
 }
 
 /**
+ * Downloads a file from Telegram's Bot API.
+ * Token is embedded in the URL path — no auth headers needed.
+ */
+export async function downloadTelegramFile(
+  filePath: string,
+  botToken: string,
+  destDir: string,
+  maxSizeBytes: number,
+  logger?: Logger,
+): Promise<Attachment> {
+  await mkdir(destDir, { recursive: true });
+
+  const url = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+  logger?.debug({ filePath, destDir }, "Downloading Telegram file");
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Download failed: HTTP ${response.status}`);
+  }
+
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  if (contentLength > maxSizeBytes) {
+    throw new Error(`File too large: ${contentLength} bytes exceeds ${maxSizeBytes} byte limit`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > maxSizeBytes) {
+    throw new Error(`File too large: ${buffer.length} bytes exceeds ${maxSizeBytes} byte limit`);
+  }
+
+  const mimeType = response.headers.get("content-type") || "application/octet-stream";
+  const originalName = basename(filePath) || "file";
+  const filename = `${Date.now()}_${sanitizeFilename(originalName)}`;
+  const localPath = join(destDir, filename);
+
+  await writeFile(localPath, buffer);
+
+  logger?.debug({ originalName, mimeType, sizeBytes: buffer.length, localPath }, "Telegram file downloaded");
+
+  return { originalName, mimeType, localPath, sizeBytes: buffer.length };
+}
+
+/**
+ * Downloads a file from Discord's CDN. URLs are public — no auth needed.
+ * Accepts fileName and contentType from the discord.js Attachment object.
+ */
+export async function downloadDiscordAttachment(
+  url: string,
+  fileName: string,
+  contentType: string,
+  destDir: string,
+  maxSizeBytes: number,
+  logger?: Logger,
+): Promise<Attachment> {
+  await mkdir(destDir, { recursive: true });
+
+  logger?.debug({ url: url.slice(0, 80), fileName, destDir }, "Downloading Discord attachment");
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Download failed: HTTP ${response.status}`);
+  }
+
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  if (contentLength > maxSizeBytes) {
+    throw new Error(`File too large: ${contentLength} bytes exceeds ${maxSizeBytes} byte limit`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > maxSizeBytes) {
+    throw new Error(`File too large: ${buffer.length} bytes exceeds ${maxSizeBytes} byte limit`);
+  }
+
+  const mimeType = contentType || response.headers.get("content-type") || "application/octet-stream";
+  const originalName = fileName || "file";
+  const filename = `${Date.now()}_${sanitizeFilename(originalName)}`;
+  const localPath = join(destDir, filename);
+
+  await writeFile(localPath, buffer);
+
+  logger?.debug({ originalName, mimeType, sizeBytes: buffer.length, localPath }, "Discord attachment downloaded");
+
+  return { originalName, mimeType, localPath, sizeBytes: buffer.length };
+}
+
+/**
  * Formats an array of attachments as an XML block to append to the agent prompt.
  * Returns empty string if no attachments.
  */

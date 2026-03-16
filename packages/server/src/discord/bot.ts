@@ -6,6 +6,13 @@ import type { Logger } from "../logger";
 
 const DISCORD_TEXT_LIMIT = 2000;
 
+export interface DiscordFile {
+  url: string;
+  name: string;
+  contentType: string;
+  size: number;
+}
+
 export interface DiscordMessage {
   type: "dm" | "guild";
   text: string;
@@ -15,6 +22,7 @@ export interface DiscordMessage {
   senderId: string;
   isMentioned: boolean;
   guildId: string | null;
+  files?: DiscordFile[];
 }
 
 export type DiscordMessageHandler = (message: DiscordMessage) => Promise<void>;
@@ -59,7 +67,7 @@ export class DiscordBot {
 
     this.client.on("messageCreate", async (msg: Message) => {
       if (msg.author.bot) return;
-      if (!msg.content) return;
+      if (!msg.content && msg.attachments.size === 0) return;
 
       const isDm = msg.guild === null;
       const clientUser = this.client.user;
@@ -71,6 +79,13 @@ export class DiscordBot {
         text = stripBotMention(text, clientUser.id);
       }
 
+      const files: DiscordFile[] = [...msg.attachments.values()].map((a) => ({
+        url: a.url,
+        name: a.name,
+        contentType: a.contentType ?? "application/octet-stream",
+        size: a.size,
+      }));
+
       if (this.handler) {
         await this.handler({
           type: isDm ? "dm" : "guild",
@@ -81,6 +96,7 @@ export class DiscordBot {
           senderId: msg.author.id,
           isMentioned,
           guildId: msg.guildId,
+          ...(files.length > 0 && { files }),
         });
       }
     });

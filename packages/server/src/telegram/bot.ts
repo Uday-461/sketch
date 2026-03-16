@@ -6,6 +6,13 @@ import type { Logger } from "../logger";
 
 const TELEGRAM_TEXT_LIMIT = 4096;
 
+export interface TelegramFile {
+  filePath: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+}
+
 export interface TelegramMessage {
   type: "dm" | "group";
   text: string;
@@ -14,6 +21,7 @@ export interface TelegramMessage {
   senderName: string;
   senderId: string;
   isMentioned: boolean;
+  files?: TelegramFile[];
 }
 
 export type TelegramMessageHandler = (message: TelegramMessage) => Promise<void>;
@@ -44,8 +52,8 @@ export class TelegramBot {
     this.botUsername = me.username ?? "";
     this.logger.info({ username: this.botUsername }, "Telegram bot authenticated");
 
-    this.bot.on("message:text", async (ctx: Context) => {
-      if (!ctx.message?.text || !ctx.from || ctx.from.is_bot) return;
+    this.bot.on("message", async (ctx: Context) => {
+      if (!ctx.message || !ctx.from || ctx.from.is_bot) return;
 
       const chatType = ctx.chat?.type;
       const isPrivate = chatType === "private";
@@ -57,25 +65,89 @@ export class TelegramBot {
       const senderName =
         [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ") || ctx.from.username || "Unknown";
 
+      const text = ctx.message.text ?? ctx.message.caption ?? "";
+
+      // Detect media and build file metadata
+      const files: TelegramFile[] = [];
+      const msg = ctx.message;
+      try {
+        if (msg.photo && msg.photo.length > 0) {
+          const largest = msg.photo[msg.photo.length - 1];
+          const fileInfo = await ctx.getFile();
+          files.push({
+            filePath: fileInfo.file_path ?? "",
+            fileName: "photo.jpg",
+            mimeType: "image/jpeg",
+            fileSize: largest.file_size ?? 0,
+          });
+        } else if (msg.document) {
+          const fileInfo = await ctx.getFile();
+          files.push({
+            filePath: fileInfo.file_path ?? "",
+            fileName: msg.document.file_name ?? "document",
+            mimeType: msg.document.mime_type ?? "application/octet-stream",
+            fileSize: msg.document.file_size ?? 0,
+          });
+        } else if (msg.video) {
+          const fileInfo = await ctx.getFile();
+          files.push({
+            filePath: fileInfo.file_path ?? "",
+            fileName: msg.video.file_name ?? "video.mp4",
+            mimeType: "video/mp4",
+            fileSize: msg.video.file_size ?? 0,
+          });
+        } else if (msg.audio) {
+          const fileInfo = await ctx.getFile();
+          files.push({
+            filePath: fileInfo.file_path ?? "",
+            fileName: msg.audio.file_name ?? "audio.mp3",
+            mimeType: msg.audio.mime_type ?? "audio/mpeg",
+            fileSize: msg.audio.file_size ?? 0,
+          });
+        } else if (msg.voice) {
+          const fileInfo = await ctx.getFile();
+          files.push({
+            filePath: fileInfo.file_path ?? "",
+            fileName: "voice.ogg",
+            mimeType: "audio/ogg",
+            fileSize: msg.voice.file_size ?? 0,
+          });
+        } else if (msg.sticker) {
+          const fileInfo = await ctx.getFile();
+          const isVideo = msg.sticker.is_video ?? false;
+          files.push({
+            filePath: fileInfo.file_path ?? "",
+            fileName: isVideo ? "sticker.webm" : "sticker.webp",
+            mimeType: isVideo ? "video/webm" : "image/webp",
+            fileSize: msg.sticker.file_size ?? 0,
+          });
+        }
+      } catch (err) {
+        this.logger.warn({ err, chatId }, "Failed to get Telegram file info");
+      }
+
+      if (!text && files.length === 0) return;
+
       let isMentioned = false;
       if (isGroup) {
         isMentioned = this.checkMention(ctx);
       }
 
-      let text = ctx.message.text;
+      let processedText = text;
       if (isMentioned) {
-        text = stripBotMention(text, this.botUsername);
+        processedText = stripBotMention(processedText, this.botUsername);
       }
 
       if (this.handler) {
         await this.handler({
           type: isPrivate ? "dm" : "group",
-          text,
+          text: processedText,
           chatId,
           messageId: ctx.message.message_id,
           senderName,
           senderId,
           isMentioned,
+          ...(files.length > 0 && { files }),
         });
       }
     });
@@ -102,6 +174,10 @@ export class TelegramBot {
 
   get username(): string {
     return this.botUsername;
+  }
+
+  get botToken(): string {
+    return this.bot.token;
   }
 
   async sendText(chatId: string, text: string, replyToMessageId?: number): Promise<void> {
@@ -148,17 +224,22 @@ export class TelegramBot {
   }
 
   private checkMention(ctx: Context): boolean {
-    if (!ctx.message?.entities || !this.botUsername) return false;
+    if (!this.botUsername) return false;
 
-    for (const entity of ctx.message.entities) {
+    const textEntities = ctx.message?.entities ?? [];
+    const captionEntities = ctx.message?.caption_entities ?? [];
+    const allEntities = [...textEntities, ...captionEntities];
+    const textSource = ctx.message?.text ?? ctx.message?.caption ?? "";
+
+    for (const entity of allEntities) {
       if (entity.type === "mention") {
-        const mentionText = ctx.message.text?.substring(entity.offset, entity.offset + entity.length);
+        const mentionText = textSource.substring(entity.offset, entity.offset + entity.length);
         if (mentionText?.toLowerCase() === `@${this.botUsername.toLowerCase()}`) return true;
       }
     }
 
     // Check reply-to-bot
-    if (ctx.message.reply_to_message?.from?.username?.toLowerCase() === this.botUsername.toLowerCase()) {
+    if (ctx.message?.reply_to_message?.from?.username?.toLowerCase() === this.botUsername.toLowerCase()) {
       return true;
     }
 

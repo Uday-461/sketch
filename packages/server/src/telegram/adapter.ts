@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import type { Kysely } from "kysely";
 import type { BufferedMessage } from "../agent/prompt";
 import { formatBufferedContext } from "../agent/prompt";
@@ -8,11 +8,13 @@ import type { Config } from "../config";
 import type { createSettingsRepository } from "../db/repositories/settings";
 import type { createUserRepository } from "../db/repositories/users";
 import type { DB } from "../db/schema";
+import type { Attachment } from "../files";
+import { downloadTelegramFile } from "../files";
 import type { Logger } from "../logger";
 import type { QueueManager } from "../queue";
 import type { TaskScheduler } from "../scheduler/service";
 import type { GroupBuffer } from "../whatsapp/group-buffer";
-import type { TelegramBot } from "./bot";
+import type { TelegramBot, TelegramFile } from "./bot";
 import { createTelegramMessageHandler } from "./message-handler";
 
 type UserRepository = ReturnType<typeof createUserRepository>;
@@ -34,6 +36,29 @@ export interface TelegramAdapterDeps {
   scheduler?: TaskScheduler;
 }
 
+async function downloadTelegramFiles(
+  files: TelegramFile[],
+  botToken: string,
+  attachDir: string,
+  maxBytes: number,
+  logger: Logger,
+): Promise<Attachment[]> {
+  const attachments: Attachment[] = [];
+  for (const file of files) {
+    try {
+      if (!file.filePath) {
+        logger.warn({ fileName: file.fileName }, "Telegram file has no file_path — skipping");
+        continue;
+      }
+      const downloaded = await downloadTelegramFile(file.filePath, botToken, attachDir, maxBytes, logger);
+      attachments.push(downloaded);
+    } catch (err) {
+      logger.warn({ err, fileName: file.fileName }, "Failed to download Telegram file");
+    }
+  }
+  return attachments;
+}
+
 export function wireTelegramHandlers(telegram: TelegramBot, deps: TelegramAdapterDeps): void {
   const {
     db,
@@ -47,6 +72,8 @@ export function wireTelegramHandlers(telegram: TelegramBot, deps: TelegramAdapte
     findIntegrationProvider,
     scheduler,
   } = deps;
+
+  const maxFileBytes = config.MAX_FILE_SIZE_MB * 1024 * 1024;
 
   telegram.onMessage(async (message) => {
     if (message.type === "dm") {
@@ -70,13 +97,25 @@ export function wireTelegramHandlers(telegram: TelegramBot, deps: TelegramAdapte
         await telegram.sendTyping(message.chatId);
 
         try {
+          let attachments: Attachment[] = [];
+          if (message.files?.length) {
+            const attachDir = join(workspaceDir, "attachments");
+            attachments = await downloadTelegramFiles(
+              message.files,
+              telegram.botToken,
+              attachDir,
+              maxFileBytes,
+              logger,
+            );
+          }
+
           const onMessage = createTelegramMessageHandler(telegram, message.chatId);
           const integrationMcpServers = await buildMcpServers(user.email);
 
           const result = await runAgent({
             db,
             workspaceKey: user.id,
-            userMessage: message.text || "Hello",
+            userMessage: message.text || "See attached files.",
             workspaceDir,
             userName: user.name,
             userEmail: user.email,
@@ -85,6 +124,7 @@ export function wireTelegramHandlers(telegram: TelegramBot, deps: TelegramAdapte
             onMessage,
             orgName: settingsRow?.org_name,
             botName: settingsRow?.bot_name,
+            attachments: attachments.length > 0 ? attachments : undefined,
             integrationMcpServers,
             findIntegrationProvider,
             taskContext: {
@@ -144,6 +184,12 @@ export function wireTelegramHandlers(telegram: TelegramBot, deps: TelegramAdapte
       await telegram.sendTyping(message.chatId);
 
       try {
+        let attachments: Attachment[] = [];
+        if (message.files?.length) {
+          const attachDir = join(workspaceDir, "attachments");
+          attachments = await downloadTelegramFiles(message.files, telegram.botToken, attachDir, maxFileBytes, logger);
+        }
+
         const buffered = groupBuffer.drain(message.chatId);
         const contextMessages: BufferedMessage[] = buffered.map((m) => ({
           userName: m.senderName,
@@ -154,7 +200,7 @@ export function wireTelegramHandlers(telegram: TelegramBot, deps: TelegramAdapte
         const userMessage = formatBufferedContext(
           contextMessages,
           userName,
-          message.text || "Hello",
+          message.text || "See attached files.",
           undefined,
           user?.email ?? null,
         );
@@ -174,6 +220,7 @@ export function wireTelegramHandlers(telegram: TelegramBot, deps: TelegramAdapte
           onMessage,
           orgName: settingsRow?.org_name,
           botName: settingsRow?.bot_name,
+          attachments: attachments.length > 0 ? attachments : undefined,
           telegramGroupContext: { groupName, groupDescription },
           integrationMcpServers,
           findIntegrationProvider,

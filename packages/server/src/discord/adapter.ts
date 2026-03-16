@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import type { Kysely } from "kysely";
 import type { BufferedMessage } from "../agent/prompt";
 import { formatBufferedContext } from "../agent/prompt";
@@ -8,11 +8,13 @@ import type { Config } from "../config";
 import type { createSettingsRepository } from "../db/repositories/settings";
 import type { createUserRepository } from "../db/repositories/users";
 import type { DB } from "../db/schema";
+import type { Attachment } from "../files";
+import { downloadDiscordAttachment } from "../files";
 import type { Logger } from "../logger";
 import type { QueueManager } from "../queue";
 import type { TaskScheduler } from "../scheduler/service";
 import type { GroupBuffer } from "../whatsapp/group-buffer";
-import type { DiscordBot } from "./bot";
+import type { DiscordBot, DiscordFile } from "./bot";
 import { createDiscordMessageHandler } from "./message-handler";
 
 type UserRepository = ReturnType<typeof createUserRepository>;
@@ -34,6 +36,31 @@ export interface DiscordAdapterDeps {
   scheduler?: TaskScheduler;
 }
 
+async function downloadDiscordFiles(
+  files: DiscordFile[],
+  attachDir: string,
+  maxBytes: number,
+  logger: Logger,
+): Promise<Attachment[]> {
+  const attachments: Attachment[] = [];
+  for (const file of files) {
+    try {
+      const downloaded = await downloadDiscordAttachment(
+        file.url,
+        file.name,
+        file.contentType,
+        attachDir,
+        maxBytes,
+        logger,
+      );
+      attachments.push(downloaded);
+    } catch (err) {
+      logger.warn({ err, fileName: file.name }, "Failed to download Discord attachment");
+    }
+  }
+  return attachments;
+}
+
 export function wireDiscordHandlers(discord: DiscordBot, deps: DiscordAdapterDeps): void {
   const {
     db,
@@ -47,6 +74,8 @@ export function wireDiscordHandlers(discord: DiscordBot, deps: DiscordAdapterDep
     findIntegrationProvider,
     scheduler,
   } = deps;
+
+  const maxFileBytes = config.MAX_FILE_SIZE_MB * 1024 * 1024;
 
   discord.onMessage(async (message) => {
     if (message.type === "dm") {
@@ -69,13 +98,19 @@ export function wireDiscordHandlers(discord: DiscordBot, deps: DiscordAdapterDep
         await discord.sendTyping(message.channelId);
 
         try {
+          let attachments: Attachment[] = [];
+          if (message.files?.length) {
+            const attachDir = join(workspaceDir, "attachments");
+            attachments = await downloadDiscordFiles(message.files, attachDir, maxFileBytes, logger);
+          }
+
           const onMessage = createDiscordMessageHandler(discord, message.channelId);
           const integrationMcpServers = await buildMcpServers(user.email);
 
           const result = await runAgent({
             db,
             workspaceKey: user.id,
-            userMessage: message.text || "Hello",
+            userMessage: message.text || "See attached files.",
             workspaceDir,
             userName: user.name,
             userEmail: user.email,
@@ -84,6 +119,7 @@ export function wireDiscordHandlers(discord: DiscordBot, deps: DiscordAdapterDep
             onMessage,
             orgName: settingsRow?.org_name,
             botName: settingsRow?.bot_name,
+            attachments: attachments.length > 0 ? attachments : undefined,
             integrationMcpServers,
             findIntegrationProvider,
             taskContext: {
@@ -143,6 +179,12 @@ export function wireDiscordHandlers(discord: DiscordBot, deps: DiscordAdapterDep
       await discord.sendTyping(message.channelId);
 
       try {
+        let attachments: Attachment[] = [];
+        if (message.files?.length) {
+          const attachDir = join(workspaceDir, "attachments");
+          attachments = await downloadDiscordFiles(message.files, attachDir, maxFileBytes, logger);
+        }
+
         const bufferKey = `discord-${guildId}-${message.channelId}`;
         const buffered = groupBuffer.drain(bufferKey);
         const contextMessages: BufferedMessage[] = buffered.map((m) => ({
@@ -154,7 +196,7 @@ export function wireDiscordHandlers(discord: DiscordBot, deps: DiscordAdapterDep
         const userMessage = formatBufferedContext(
           contextMessages,
           userName,
-          message.text || "Hello",
+          message.text || "See attached files.",
           undefined,
           user?.email ?? null,
         );
@@ -176,6 +218,7 @@ export function wireDiscordHandlers(discord: DiscordBot, deps: DiscordAdapterDep
           onMessage,
           orgName: settingsRow?.org_name,
           botName: settingsRow?.bot_name,
+          attachments: attachments.length > 0 ? attachments : undefined,
           discordChannelContext: { channelName },
           integrationMcpServers,
           findIntegrationProvider,

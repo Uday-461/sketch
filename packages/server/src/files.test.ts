@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildMultimodalContent,
+  downloadDiscordAttachment,
   downloadSlackFile,
+  downloadTelegramFile,
   formatAttachmentsForPrompt,
   isImageAttachment,
   mimeToExtension,
@@ -313,5 +315,175 @@ describe("mimeToExtension", () => {
   it("returns 'bin' for null/undefined", () => {
     expect(mimeToExtension(null)).toBe("bin");
     expect(mimeToExtension(undefined)).toBe("bin");
+  });
+});
+
+describe("downloadTelegramFile", () => {
+  let destDir: string;
+
+  beforeEach(async () => {
+    destDir = await mkdtemp(join(tmpdir(), "sketch-test-tg-"));
+  });
+
+  afterEach(async () => {
+    await rm(destDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("downloads a file using bot token in URL path", async () => {
+    const content = Buffer.from("telegram file data");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(content, {
+        status: 200,
+        headers: { "content-type": "image/jpeg", "content-length": String(content.length) },
+      }),
+    );
+
+    const result = await downloadTelegramFile("photos/file_123.jpg", "bot-token-abc", destDir, 20 * 1024 * 1024);
+
+    expect(fetchSpy).toHaveBeenCalledWith("https://api.telegram.org/file/botbot-token-abc/photos/file_123.jpg");
+    expect(result.originalName).toBe("file_123.jpg");
+    expect(result.mimeType).toBe("image/jpeg");
+    expect(result.sizeBytes).toBe(content.length);
+    const saved = await readFile(result.localPath);
+    expect(saved.toString()).toBe("telegram file data");
+  });
+
+  it("rejects files exceeding the size limit via content-length", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(Buffer.from("x"), {
+        status: 200,
+        headers: { "content-length": String(100 * 1024 * 1024) },
+      }),
+    );
+
+    await expect(downloadTelegramFile("photos/big.jpg", "token", destDir, 1024)).rejects.toThrow("File too large");
+  });
+
+  it("rejects files exceeding the size limit via actual buffer size", async () => {
+    const bigContent = Buffer.alloc(2048, "x");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(bigContent, { status: 200 }));
+
+    await expect(downloadTelegramFile("photos/big.jpg", "token", destDir, 1024)).rejects.toThrow("File too large");
+  });
+
+  it("throws on failed HTTP response", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    await expect(downloadTelegramFile("photos/missing.jpg", "token", destDir, 20 * 1024 * 1024)).rejects.toThrow(
+      "Download failed: HTTP 404",
+    );
+  });
+
+  it("uses content-type from response header", async () => {
+    const content = Buffer.from("data");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(content, { status: 200, headers: { "content-type": "application/pdf" } }),
+    );
+
+    const result = await downloadTelegramFile("documents/file_456.pdf", "token", destDir, 20 * 1024 * 1024);
+    expect(result.mimeType).toBe("application/pdf");
+  });
+});
+
+describe("downloadDiscordAttachment", () => {
+  let destDir: string;
+
+  beforeEach(async () => {
+    destDir = await mkdtemp(join(tmpdir(), "sketch-test-discord-"));
+  });
+
+  afterEach(async () => {
+    await rm(destDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("downloads a file from Discord CDN", async () => {
+    const content = Buffer.from("discord file data");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(content, {
+        status: 200,
+        headers: { "content-type": "image/png", "content-length": String(content.length) },
+      }),
+    );
+
+    const result = await downloadDiscordAttachment(
+      "https://cdn.discordapp.com/attachments/123/456/image.png",
+      "image.png",
+      "image/png",
+      destDir,
+      20 * 1024 * 1024,
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith("https://cdn.discordapp.com/attachments/123/456/image.png");
+    expect(result.originalName).toBe("image.png");
+    expect(result.mimeType).toBe("image/png");
+    expect(result.sizeBytes).toBe(content.length);
+    const saved = await readFile(result.localPath);
+    expect(saved.toString()).toBe("discord file data");
+  });
+
+  it("prefers provided contentType over response header", async () => {
+    const content = Buffer.from("data");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(content, { status: 200, headers: { "content-type": "application/octet-stream" } }),
+    );
+
+    const result = await downloadDiscordAttachment(
+      "https://cdn.discordapp.com/attachments/1/2/doc.pdf",
+      "doc.pdf",
+      "application/pdf",
+      destDir,
+      20 * 1024 * 1024,
+    );
+    expect(result.mimeType).toBe("application/pdf");
+  });
+
+  it("rejects files exceeding the size limit via content-length", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(Buffer.from("x"), {
+        status: 200,
+        headers: { "content-length": String(100 * 1024 * 1024) },
+      }),
+    );
+
+    await expect(
+      downloadDiscordAttachment(
+        "https://cdn.discordapp.com/a/1/2/big.bin",
+        "big.bin",
+        "application/octet-stream",
+        destDir,
+        1024,
+      ),
+    ).rejects.toThrow("File too large");
+  });
+
+  it("rejects files exceeding the size limit via actual buffer size", async () => {
+    const bigContent = Buffer.alloc(2048, "x");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(bigContent, { status: 200 }));
+
+    await expect(
+      downloadDiscordAttachment(
+        "https://cdn.discordapp.com/a/1/2/big.bin",
+        "big.bin",
+        "application/octet-stream",
+        destDir,
+        1024,
+      ),
+    ).rejects.toThrow("File too large");
+  });
+
+  it("throws on failed HTTP response", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 403 }));
+
+    await expect(
+      downloadDiscordAttachment(
+        "https://cdn.discordapp.com/a/1/2/file.txt",
+        "file.txt",
+        "text/plain",
+        destDir,
+        20 * 1024 * 1024,
+      ),
+    ).rejects.toThrow("Download failed: HTTP 403");
   });
 });
