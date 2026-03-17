@@ -277,6 +277,7 @@ export class TaskScheduler {
           threadTs: threadKey,
           orgName: settingsRow?.org_name,
           botName: settingsRow?.bot_name,
+          mainModelTier: settingsRow?.main_model_tier,
           integrationMcpServers,
           findIntegrationProvider,
           sessionMode: task.session_mode as "fresh" | "persistent" | "chat",

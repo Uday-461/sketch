@@ -20,7 +20,7 @@ import {
   WarningCircleIcon,
   WhatsappLogoIcon,
 } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { dashboardRoute } from "./dashboard";
@@ -152,6 +152,8 @@ export function ActivityPage() {
         </p>
       </div>
 
+      {isAdmin ? <ModelTierSelector /> : null}
+
       {isAdmin && statsQuery.data ? <StatsCards stats={statsQuery.data} /> : null}
 
       {/* Filter bar */}
@@ -252,6 +254,50 @@ export function ActivityPage() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+const MODEL_TIER_QUERY_KEY = "model-tier";
+
+const MODEL_TIERS = [
+  { value: "haiku", label: "Haiku", description: "Fast & cheap" },
+  { value: "sonnet", label: "Sonnet", description: "Balanced" },
+  { value: "opus", label: "Opus", description: "Most capable" },
+];
+
+function ModelTierSelector() {
+  const queryClient = useQueryClient();
+  const tierQuery = useQuery({
+    queryKey: [MODEL_TIER_QUERY_KEY],
+    queryFn: () => api.settings.modelTier(),
+  });
+
+  const mutation = useMutation({
+    mutationFn: (tier: string) => api.settings.setModelTier(tier),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [MODEL_TIER_QUERY_KEY] }),
+  });
+
+  const currentTier = tierQuery.data?.tier ?? "sonnet";
+
+  return (
+    <div className="mt-6 flex items-center gap-3 rounded-lg border border-border bg-card p-4">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">Main model tier</p>
+        <p className="text-xs text-muted-foreground">Controls the primary model used for chat responses</p>
+      </div>
+      <Select value={currentTier} onValueChange={(v) => mutation.mutate(v)} disabled={mutation.isPending}>
+        <SelectTrigger className="w-[180px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {MODEL_TIERS.map((t) => (
+            <SelectItem key={t.value} value={t.value}>
+              {t.label} — {t.description}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

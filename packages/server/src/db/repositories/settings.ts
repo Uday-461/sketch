@@ -41,6 +41,7 @@ export function createSettingsRepository(db: Kysely<DB>) {
         discordBotToken: string | null;
         litellmApiKey: string | null;
         litellmModel: string | null;
+        mainModelTier: string;
         jwtSecret: string;
         smtpHost: string | null;
         smtpPort: number | null;
@@ -67,6 +68,7 @@ export function createSettingsRepository(db: Kysely<DB>) {
       if (data.discordBotToken !== undefined) updates.discord_bot_token = data.discordBotToken;
       if (data.litellmApiKey !== undefined) updates.litellm_api_key = data.litellmApiKey;
       if (data.litellmModel !== undefined) updates.litellm_model = data.litellmModel;
+      if (data.mainModelTier !== undefined) updates.main_model_tier = data.mainModelTier;
       if (data.smtpHost !== undefined) updates.smtp_host = data.smtpHost;
       if (data.smtpPort !== undefined) updates.smtp_port = data.smtpPort;
       if (data.smtpUser !== undefined) updates.smtp_user = data.smtpUser;

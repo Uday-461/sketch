@@ -169,6 +169,7 @@ export function createConfiguredSlackBot(tokens: { botToken: string; appToken: s
           onMessage,
           orgName: settingsRow?.org_name,
           botName: settingsRow?.bot_name,
+          mainModelTier: settingsRow?.main_model_tier,
           attachments: attachments.length > 0 ? attachments : undefined,
           integrationMcpServers,
           findIntegrationProvider,
@@ -345,6 +346,7 @@ export function createConfiguredSlackBot(tokens: { botToken: string; appToken: s
           threadTs,
           orgName: settingsRow?.org_name,
           botName: settingsRow?.bot_name,
+          mainModelTier: settingsRow?.main_model_tier,
           attachments: attachments.length > 0 ? attachments : undefined,
           channelContext: {
             channelName: channel.name,

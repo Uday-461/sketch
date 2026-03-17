@@ -302,6 +302,15 @@ export const api = {
     identity() {
       return request<{ orgName: string | null; botName: string }>("/api/settings/identity");
     },
+    modelTier() {
+      return request<{ tier: string }>("/api/settings/model-tier");
+    },
+    setModelTier(tier: string) {
+      return request<{ success: boolean }>("/api/settings/model-tier", {
+        method: "PUT",
+        body: JSON.stringify({ tier }),
+      });
+    },
   },
   users: {
     list() {

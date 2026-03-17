@@ -62,6 +62,7 @@ export interface SettingsTable {
   smtp_user: string | null;
   smtp_password: string | null;
   smtp_from: string | null;
+  main_model_tier: Generated<string>;
   onboarding_completed_at: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;

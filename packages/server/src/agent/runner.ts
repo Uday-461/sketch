@@ -77,6 +77,7 @@ export interface RunAgentParams {
   sessionMode?: "fresh" | "persistent" | "chat";
   taskContext?: TaskContext;
   scheduler?: TaskScheduler;
+  mainModelTier?: string;
 }
 
 /**
@@ -103,6 +104,12 @@ export function extractAssistantText(message: unknown): string | null {
   const joined = texts.join("\n");
   return joined.trim() ? joined : null;
 }
+
+const MODEL_TIER_IDS: Record<string, string> = {
+  haiku: "claude-haiku-4",
+  sonnet: "claude-sonnet-4-6",
+  opus: "claude-opus-4-6",
+};
 
 export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
   const { userMessage, workspaceDir, userName, logger } = params;
@@ -169,9 +176,12 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
     scheduler: params.scheduler,
   });
 
+  const modelId = MODEL_TIER_IDS[params.mainModelTier ?? "sonnet"];
+
   const run = query({
     prompt,
     options: {
+      model: modelId,
       maxTurns: 100,
       cwd: workspaceDir,
       resume: existingSessionId,
