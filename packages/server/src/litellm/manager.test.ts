@@ -73,37 +73,41 @@ describe("LiteLLMManager", () => {
     await expect(startPromise).rejects.toThrow("litellm is not installed");
   });
 
-  it("generates config yaml with correct content", async () => {
+  it("generates multi-tier config yaml for openrouter model", async () => {
     const mockSpawn = vi.mocked(spawn);
     const mockWriteFile = vi.mocked(writeFile);
 
-    // Version check succeeds
     const versionProc = new EventEmitter() as ChildProcess;
     mockSpawn.mockReturnValueOnce(versionProc);
 
-    // Main process
     const mainProc = createMockProcess();
     mockSpawn.mockReturnValueOnce(mainProc);
 
-    // Health check succeeds immediately
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
 
-    const startPromise = manager.start({ apiKey: "sk-test-key", model: "openrouter/claude-sonnet" });
+    const startPromise = manager.start({ apiKey: "sk-test-key", model: "openrouter/anthropic/claude-sonnet-4.6" });
     versionProc.emit("exit", 0, null);
     await startPromise;
 
     expect(mockWriteFile).toHaveBeenCalledOnce();
     const yamlContent = mockWriteFile.mock.calls[0]?.[1] as string;
-    // openrouter/ prefix is resolved to openai/ with api_base for /v1/messages compatibility
-    expect(yamlContent).toContain('model: "openai/claude-sonnet"');
+
+    // Should have 4 model entries: haiku, sonnet, opus, catch-all
+    expect(yamlContent).toContain('model_name: "claude-haiku-*"');
+    expect(yamlContent).toContain('model_name: "claude-sonnet-*"');
+    expect(yamlContent).toContain('model_name: "claude-opus-*"');
+    expect(yamlContent).toContain('model_name: "claude-*"');
+
+    // Correct downstream models with openai/ prefix and api_base
+    expect(yamlContent).toContain('model: "openai/anthropic/claude-haiku-4-5"');
+    expect(yamlContent).toContain('model: "openai/anthropic/claude-sonnet-4.6"');
+    expect(yamlContent).toContain('model: "openai/anthropic/claude-opus-4.6"');
     expect(yamlContent).toContain('api_base: "https://openrouter.ai/api/v1"');
     expect(yamlContent).toContain('api_key: "sk-test-key"');
     expect(yamlContent).toContain("master_key:");
-    expect(yamlContent).toContain('model_name: "claude-*"');
 
     vi.restoreAllMocks();
 
-    // Clean up
     const stopPromise = manager.stop();
     mainProc.emit("exit", 0, null);
     await stopPromise;
@@ -128,6 +132,84 @@ describe("LiteLLMManager", () => {
     const yamlContent = mockWriteFile.mock.calls[0]?.[1] as string;
     expect(yamlContent).toContain('model: "anthropic/claude-sonnet-4.6"');
     expect(yamlContent).not.toContain("api_base:");
+
+    vi.restoreAllMocks();
+
+    const stopPromise = manager.stop();
+    mainProc.emit("exit", 0, null);
+    await stopPromise;
+  });
+
+  it("generates single entry for bare model name without slash", async () => {
+    const mockSpawn = vi.mocked(spawn);
+    const mockWriteFile = vi.mocked(writeFile);
+
+    const versionProc = new EventEmitter() as ChildProcess;
+    mockSpawn.mockReturnValueOnce(versionProc);
+
+    const mainProc = createMockProcess();
+    mockSpawn.mockReturnValueOnce(mainProc);
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
+
+    const startPromise = manager.start({ apiKey: "sk-test-key", model: "claude-sonnet-4-6" });
+    versionProc.emit("exit", 0, null);
+    await startPromise;
+
+    const yamlContent = mockWriteFile.mock.calls[0]?.[1] as string;
+    expect(yamlContent).toContain('model_name: "claude-*"');
+    expect(yamlContent).toContain('model: "claude-sonnet-4-6"');
+    expect(yamlContent).not.toContain('model_name: "claude-haiku-*"');
+    expect(yamlContent).not.toContain('model_name: "claude-sonnet-*"');
+    expect(yamlContent).not.toContain('model_name: "claude-opus-*"');
+
+    vi.restoreAllMocks();
+
+    const stopPromise = manager.stop();
+    mainProc.emit("exit", 0, null);
+    await stopPromise;
+  });
+
+  it("querySpendLogs returns null when not running", async () => {
+    const result = await manager.querySpendLogs("2026-03-17", "2026-03-17");
+    expect(result).toBeNull();
+  });
+
+  it("querySpendLogs fetches and sums costs", async () => {
+    const mockSpawn = vi.mocked(spawn);
+
+    // Start the manager so it has a process and master key
+    const versionProc = new EventEmitter() as ChildProcess;
+    mockSpawn.mockReturnValueOnce(versionProc);
+    const mainProc = createMockProcess();
+    mockSpawn.mockReturnValueOnce(mainProc);
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
+
+    const startPromise = manager.start({ apiKey: "sk-test", model: "openrouter/anthropic/claude-sonnet-4.6" });
+    versionProc.emit("exit", 0, null);
+    await startPromise;
+
+    vi.restoreAllMocks();
+
+    // Mock the spend/logs response
+    const spendLogs = [{ spend: 0.05 }, { spend: 0.03 }];
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify(spendLogs), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+
+    const result = await manager.querySpendLogs("2026-03-17", "2026-03-17");
+    expect(result).not.toBeNull();
+    expect(result?.totalCost).toBeCloseTo(0.08);
+    expect(result?.logs).toHaveLength(2);
+
+    // Verify correct URL and auth header
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/spend/logs?start_date=2026-03-17&end_date=2026-03-17"),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: expect.stringContaining("Bearer ") }),
+      }),
+    );
 
     vi.restoreAllMocks();
 

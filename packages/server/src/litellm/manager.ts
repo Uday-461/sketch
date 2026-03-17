@@ -35,6 +35,25 @@ const PROVIDER_MAP: Record<string, ProviderMapping> = {
   // deepseek: { litellmPrefix: "openai", apiBase: "https://api.deepseek.com/v1" },
 };
 
+/**
+ * Maps provider prefixes to per-tier downstream model IDs.
+ * When a preset exists, writeConfigYaml() generates 4 entries (haiku/sonnet/opus/catch-all)
+ * instead of a single catch-all, enabling the SDK's multi-model cost optimization.
+ */
+interface ProviderPreset {
+  haiku: string;
+  sonnet: string;
+  opus: string;
+}
+
+const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
+  openrouter: {
+    haiku: "anthropic/claude-haiku-4-5",
+    sonnet: "anthropic/claude-sonnet-4.6",
+    opus: "anthropic/claude-opus-4.6",
+  },
+};
+
 interface LiteLLMManagerOptions {
   dataDir: string;
   port: number;
@@ -156,6 +175,23 @@ export class LiteLLMManager {
     return this.port;
   }
 
+  async querySpendLogs(startTime: string, endTime: string): Promise<{ totalCost: number; logs: unknown[] } | null> {
+    if (!this.masterKey || !this.process) return null;
+    try {
+      const res = await fetch(`http://localhost:${this.port}/spend/logs?start_date=${startTime}&end_date=${endTime}`, {
+        headers: { Authorization: `Bearer ${this.masterKey}` },
+      });
+      if (!res.ok) return null;
+      const logs = (await res.json()) as unknown[];
+      const totalCost = Array.isArray(logs)
+        ? logs.reduce((sum: number, l) => sum + ((l as Record<string, number>).spend ?? 0), 0)
+        : 0;
+      return { totalCost, logs };
+    } catch {
+      return null;
+    }
+  }
+
   private async checkInstalled(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const check = spawn("litellm", ["--version"], { stdio: "ignore" });
@@ -189,25 +225,48 @@ export class LiteLLMManager {
     };
   }
 
+  private deriveModelTiers(model: string): ProviderPreset | null {
+    const slashIndex = model.indexOf("/");
+    if (slashIndex === -1) return null;
+    return PROVIDER_PRESETS[model.slice(0, slashIndex)] ?? null;
+  }
+
+  private buildModelEntry(modelName: string, fullModel: string, apiKey: string): string[] {
+    const resolved = this.resolveModel(fullModel);
+    return [
+      `  - model_name: "${modelName}"`,
+      "    litellm_params:",
+      `      model: "${resolved.model}"`,
+      `      api_key: "${apiKey}"`,
+      ...resolved.extraParams,
+    ];
+  }
+
   private async writeConfigYaml(config: LiteLLMConfig): Promise<string> {
     const dir = join(this.dataDir, "litellm");
     await mkdir(dir, { recursive: true });
 
-    const resolved = this.resolveModel(config.model);
+    const tiers = this.deriveModelTiers(config.model);
+    const prefix = config.model.indexOf("/") !== -1 ? config.model.slice(0, config.model.indexOf("/")) : null;
 
-    const lines = [
-      "model_list:",
-      '  - model_name: "claude-*"',
-      "    litellm_params:",
-      `      model: "${resolved.model}"`,
-      `      api_key: "${config.apiKey}"`,
-      ...resolved.extraParams,
+    const lines = ["model_list:"];
+
+    if (tiers && prefix) {
+      lines.push(...this.buildModelEntry("claude-haiku-*", `${prefix}/${tiers.haiku}`, config.apiKey));
+      lines.push(...this.buildModelEntry("claude-sonnet-*", `${prefix}/${tiers.sonnet}`, config.apiKey));
+      lines.push(...this.buildModelEntry("claude-opus-*", `${prefix}/${tiers.opus}`, config.apiKey));
+      lines.push(...this.buildModelEntry("claude-*", `${prefix}/${tiers.sonnet}`, config.apiKey));
+    } else {
+      lines.push(...this.buildModelEntry("claude-*", config.model, config.apiKey));
+    }
+
+    lines.push(
       "",
       "general_settings:",
       `  master_key: "${this.masterKey}"`,
       "  allow_requests_on_db_unavailable: true",
       "",
-    ];
+    );
     const yaml = lines.join("\n");
 
     const configPath = join(dir, "config.yaml");

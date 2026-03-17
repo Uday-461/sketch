@@ -133,6 +133,9 @@ export function agentRunRoutes(db: Kysely<DB>) {
         errorsJson: run.errors_json,
         toolsUsedJson: run.tools_used_json,
         permissionDenialsJson: run.permission_denials_json,
+        modelUsageJson: run.model_usage_json,
+        litellmCostUsd: run.litellm_cost_usd,
+        sdkEventsJson: run.sdk_events_json,
         createdAt: run.created_at,
       },
       messages: messages.map((m) => ({

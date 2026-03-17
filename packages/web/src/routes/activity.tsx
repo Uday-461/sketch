@@ -409,6 +409,10 @@ function RunDetail({ runId }: { runId: string }) {
   const toolsUsed: string[] = run.toolsUsedJson ? JSON.parse(run.toolsUsedJson) : [];
   const permissionDenials: unknown[] = run.permissionDenialsJson ? JSON.parse(run.permissionDenialsJson) : [];
   const errors: unknown[] = run.errorsJson ? JSON.parse(run.errorsJson) : [];
+  const modelUsage: Record<string, { input_tokens?: number; output_tokens?: number; cost_usd?: number }> | null =
+    run.modelUsageJson ? JSON.parse(run.modelUsageJson) : null;
+  const sdkEvents: Array<{ type: string; subtype: string; data: Record<string, unknown>; timestamp: string }> =
+    run.sdkEventsJson ? JSON.parse(run.sdkEventsJson) : [];
 
   return (
     <div className="border-t border-border bg-muted/20 px-4 py-4">
@@ -420,6 +424,50 @@ function RunDetail({ runId }: { runId: string }) {
         {run.errorType ? <DetailItem label="Error type" value={run.errorType} /> : null}
       </dl>
 
+      {run.litellmCostUsd != null ? (
+        <div className="mb-3 rounded-md border border-border bg-card p-3">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Cost comparison</p>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <span className="text-xs text-muted-foreground">SDK Estimated</span>
+              <p className="font-medium">{formatCost(run.costUsd)}</p>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Actual (LiteLLM)</span>
+              <p className="font-medium">{formatCost(run.litellmCostUsd)}</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {modelUsage ? (
+        <div className="mb-3">
+          <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Model usage</p>
+          <div className="overflow-auto rounded-md border border-border">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Model</th>
+                  <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">Tokens In</th>
+                  <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">Tokens Out</th>
+                  <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">Cost (est.)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(modelUsage).map(([modelName, usage]) => (
+                  <tr key={modelName} className="border-b border-border last:border-b-0">
+                    <td className="px-3 py-1.5 font-mono">{modelName}</td>
+                    <td className="px-3 py-1.5 text-right">{formatTokens(usage.input_tokens ?? null)}</td>
+                    <td className="px-3 py-1.5 text-right">{formatTokens(usage.output_tokens ?? null)}</td>
+                    <td className="px-3 py-1.5 text-right">{formatCost(usage.cost_usd ?? null)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
       {toolsUsed.length > 0 ? (
         <div className="mb-3">
           <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Tools used</p>
@@ -428,6 +476,42 @@ function RunDetail({ runId }: { runId: string }) {
               <Badge key={tool} variant="secondary" className="text-xs">
                 {tool}
               </Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {sdkEvents.length > 0 ? (
+        <div className="mb-3">
+          <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            SDK events ({sdkEvents.length})
+          </p>
+          <div className="space-y-1">
+            {sdkEvents.map((evt, i) => (
+              <div key={`${evt.subtype}-${i}`} className="flex items-center gap-2 text-xs">
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "shrink-0 text-[10px] px-1.5 py-0",
+                    evt.subtype === "task_started" &&
+                      "border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300",
+                    evt.subtype === "task_notification" &&
+                      "border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300",
+                    evt.subtype === "compact_boundary" &&
+                      "border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300",
+                    (evt.subtype === "hook_started" || evt.subtype === "hook_response") &&
+                      "border-purple-300 text-purple-700 dark:border-purple-700 dark:text-purple-300",
+                  )}
+                >
+                  {evt.subtype.replace(/_/g, " ")}
+                </Badge>
+                <span className="truncate text-muted-foreground">
+                  {(evt.data.description as string) ??
+                    (evt.data.hook_name as string) ??
+                    (evt.data.status as string) ??
+                    ""}
+                </span>
+              </div>
             ))}
           </div>
         </div>

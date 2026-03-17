@@ -149,6 +149,9 @@ export interface AgentRunDetail extends AgentRunSummary {
   errorsJson: string | null;
   toolsUsedJson: string | null;
   permissionDenialsJson: string | null;
+  modelUsageJson: string | null;
+  litellmCostUsd: number | null;
+  sdkEventsJson: string | null;
 }
 
 export interface AgentRunMessage {

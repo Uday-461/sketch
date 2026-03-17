@@ -198,6 +198,7 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
     { role: "user", content: params.userMessage },
   ];
   let resultMessage: Record<string, unknown> | null = null;
+  const sdkEvents: Array<{ type: string; subtype: string; data: unknown; timestamp: string }> = [];
 
   for await (const message of run) {
     if (message.type === "system" && message.subtype === "init") {
@@ -223,6 +224,38 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
         role: "user",
         content: userMsg.message,
       });
+    }
+
+    if (message.type === "system") {
+      const m = message as Record<string, unknown>;
+      if (message.subtype === "task_started" || message.subtype === "task_notification") {
+        sdkEvents.push({
+          type: "system",
+          subtype: message.subtype,
+          data: {
+            task_id: m.task_id,
+            description: m.description,
+            task_type: m.task_type,
+            status: m.status,
+            summary: m.summary,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      } else if (message.subtype === "compact_boundary") {
+        sdkEvents.push({
+          type: "system",
+          subtype: "compact_boundary",
+          data: { compact_metadata: m.compact_metadata },
+          timestamp: new Date().toISOString(),
+        });
+      } else if (message.subtype === "hook_started" || message.subtype === "hook_response") {
+        sdkEvents.push({
+          type: "system",
+          subtype: message.subtype,
+          data: { hook_id: m.hook_id, hook_name: m.hook_name, hook_event: m.hook_event, outcome: m.outcome },
+          timestamp: new Date().toISOString(),
+        });
+      }
     }
 
     const text = extractAssistantText(message);
@@ -254,6 +287,7 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
     const isError = resultMessage.subtype !== "success";
     const usage = (resultMessage.usage as Record<string, number>) ?? {};
 
+    const savedRunId = runId;
     saveAgentRun(params.db, {
       run: {
         id: runId,
@@ -279,11 +313,39 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
           Array.isArray(resultMessage.permission_denials) && resultMessage.permission_denials.length > 0
             ? JSON.stringify(resultMessage.permission_denials)
             : null,
+        model_usage_json: resultMessage.modelUsage ? JSON.stringify(resultMessage.modelUsage) : null,
+        sdk_events_json: sdkEvents.length > 0 ? JSON.stringify(sdkEvents) : null,
+        litellm_cost_usd: null,
       },
       transcript,
     }).catch((err) => {
       logger.warn({ err }, "Failed to log agent run");
     });
+
+    if (process.env.ANTHROPIC_BASE_URL?.includes("localhost")) {
+      const baseUrl = process.env.ANTHROPIC_BASE_URL;
+      const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
+      if (baseUrl && authToken) {
+        const today = new Date().toISOString().slice(0, 10);
+        fetch(`${baseUrl.replace(/\/v1\/?$/, "")}/spend/logs?start_date=${today}&end_date=${today}`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        })
+          .then((res) => (res.ok ? (res.json() as Promise<unknown>) : null))
+          .then((logs) => {
+            if (!Array.isArray(logs)) return;
+            const runStart = new Date(Date.now() - ((resultMessage?.duration_ms as number) ?? 60000) - 5000);
+            const recentCost = logs
+              .filter((l: Record<string, unknown>) => new Date(l.startTime as string) >= runStart)
+              .reduce((sum: number, l: Record<string, unknown>) => sum + ((l.spend as number) ?? 0), 0);
+            if (recentCost > 0) {
+              import("../db/repositories/agent-runs").then(({ createAgentRunRepository }) => {
+                createAgentRunRepository(params.db).updateLitellmCost(savedRunId, recentCost);
+              });
+            }
+          })
+          .catch(() => {});
+      }
+    }
   }
 
   return { messageSent, sessionId, costUsd, pendingUploads, runId, numTurns };
@@ -313,6 +375,9 @@ async function saveAgentRun(
       errors_json: string | null;
       tools_used_json: string | null;
       permission_denials_json: string | null;
+      model_usage_json: string | null;
+      litellm_cost_usd: number | null;
+      sdk_events_json: string | null;
     };
     transcript: Array<{ role: string; content: unknown; usage?: unknown }>;
   },

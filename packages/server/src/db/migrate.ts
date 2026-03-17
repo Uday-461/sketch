@@ -22,6 +22,7 @@ import * as m015 from "./migrations/015-whatsapp-groups";
 import * as m016 from "./migrations/016-telegram-discord";
 import * as m017 from "./migrations/017-litellm";
 import * as m018 from "./migrations/018-agent-runs";
+import * as m019 from "./migrations/019-agent-runs-model-usage";
 import type { DB } from "./schema";
 
 export async function runMigrations(db: Kysely<DB>): Promise<void> {
@@ -48,6 +49,7 @@ export async function runMigrations(db: Kysely<DB>): Promise<void> {
           "016-telegram-discord": m016,
           "017-litellm": m017,
           "018-agent-runs": m018,
+          "019-agent-runs-model-usage": m019,
         };
       },
     },

@@ -144,6 +144,9 @@ export interface AgentRunsTable {
   errors_json: string | null;
   tools_used_json: string | null;
   permission_denials_json: string | null;
+  model_usage_json: string | null;
+  litellm_cost_usd: number | null;
+  sdk_events_json: string | null;
   created_at: Generated<string>;
 }
 

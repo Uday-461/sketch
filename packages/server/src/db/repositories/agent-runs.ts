@@ -58,6 +58,10 @@ export function createAgentRunRepository(db: Kysely<DB>) {
       return row ?? null;
     },
 
+    async updateLitellmCost(runId: string, cost: number): Promise<void> {
+      await db.updateTable("agent_runs").set({ litellm_cost_usd: cost }).where("id", "=", runId).execute();
+    },
+
     async getRunMessages(runId: string): Promise<Selectable<AgentMessagesTable>[]> {
       return db
         .selectFrom("agent_messages")
