@@ -7,6 +7,7 @@
  * canUseTool grants read-only file access and Bash execution for ~/.claude paths
  * so skills can be loaded and their companion CLIs executed.
  */
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { type SDKUserMessage, query } from "@anthropic-ai/claude-agent-sdk";
 import type { Kysely } from "kysely";
@@ -26,6 +27,8 @@ export interface AgentResult {
   sessionId: string;
   costUsd: number;
   pendingUploads: string[];
+  runId: string;
+  numTurns: number;
 }
 
 export interface McpServerConfig {
@@ -41,6 +44,7 @@ export interface RunAgentParams {
   workspaceDir: string;
   userName: string;
   userEmail?: string | null;
+  userId?: string | null;
   logger: Logger;
   platform: Platform;
   onMessage: (text: string) => Promise<void>;
@@ -187,9 +191,36 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
     },
   });
 
+  const runId = randomUUID();
+  let model: string | null = null;
+  let toolsUsed: string[] = [];
+  const transcript: Array<{ role: string; content: unknown; usage?: unknown }> = [];
+  let resultMessage: Record<string, unknown> | null = null;
+
   for await (const message of run) {
     if (message.type === "system" && message.subtype === "init") {
       sessionId = message.session_id;
+      const initMsg = message as Record<string, unknown>;
+      model = (initMsg.model as string) ?? null;
+      toolsUsed = (initMsg.tools as string[]) ?? [];
+    }
+
+    if (message.type === "assistant") {
+      const assistantMsg = message as Record<string, unknown>;
+      const inner = assistantMsg.message as Record<string, unknown> | undefined;
+      transcript.push({
+        role: "assistant",
+        content: inner?.content,
+        usage: inner?.usage,
+      });
+    }
+
+    if (message.type === "user") {
+      const userMsg = message as Record<string, unknown>;
+      transcript.push({
+        role: "user",
+        content: userMsg.message,
+      });
     }
 
     const text = extractAssistantText(message);
@@ -205,6 +236,7 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
     if (message.type === "result") {
       sessionId = message.session_id;
       costUsd = message.total_cost_usd;
+      resultMessage = message as unknown as Record<string, unknown>;
     }
   }
 
@@ -213,7 +245,92 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
   }
 
   const pendingUploads = uploadCollector.drain();
+  const numTurns = (resultMessage?.num_turns as number) ?? 0;
   logger.info({ userId: userName, sessionId, costUsd, pendingUploads: pendingUploads.length }, "Agent run completed");
 
-  return { messageSent, sessionId, costUsd, pendingUploads };
+  if (resultMessage) {
+    const isError = resultMessage.subtype !== "success";
+    const usage = (resultMessage.usage as Record<string, number>) ?? {};
+
+    saveAgentRun(params.db, {
+      run: {
+        id: runId,
+        user_id: params.userId ?? null,
+        workspace_key: params.workspaceKey,
+        thread_key: params.threadTs ?? "",
+        platform: params.platform,
+        session_id: sessionId,
+        model,
+        cost_usd: costUsd,
+        input_tokens: usage.input_tokens ?? null,
+        output_tokens: usage.output_tokens ?? null,
+        cache_read_tokens: usage.cache_read_input_tokens ?? null,
+        cache_creation_tokens: usage.cache_creation_input_tokens ?? null,
+        duration_ms: (resultMessage.duration_ms as number) ?? null,
+        duration_api_ms: (resultMessage.duration_api_ms as number) ?? null,
+        num_turns: numTurns,
+        status: isError ? "error" : "success",
+        error_type: isError ? (resultMessage.subtype as string) : null,
+        errors_json: isError && "errors" in resultMessage ? JSON.stringify(resultMessage.errors) : null,
+        tools_used_json: toolsUsed.length > 0 ? JSON.stringify(toolsUsed) : null,
+        permission_denials_json:
+          Array.isArray(resultMessage.permission_denials) && resultMessage.permission_denials.length > 0
+            ? JSON.stringify(resultMessage.permission_denials)
+            : null,
+      },
+      transcript,
+    }).catch((err) => {
+      logger.warn({ err }, "Failed to log agent run");
+    });
+  }
+
+  return { messageSent, sessionId, costUsd, pendingUploads, runId, numTurns };
+}
+
+async function saveAgentRun(
+  db: Kysely<DB>,
+  data: {
+    run: {
+      id: string;
+      user_id: string | null;
+      workspace_key: string;
+      thread_key: string;
+      platform: string;
+      session_id: string;
+      model: string | null;
+      cost_usd: number;
+      input_tokens: number | null;
+      output_tokens: number | null;
+      cache_read_tokens: number | null;
+      cache_creation_tokens: number | null;
+      duration_ms: number | null;
+      duration_api_ms: number | null;
+      num_turns: number;
+      status: string;
+      error_type: string | null;
+      errors_json: string | null;
+      tools_used_json: string | null;
+      permission_denials_json: string | null;
+    };
+    transcript: Array<{ role: string; content: unknown; usage?: unknown }>;
+  },
+): Promise<void> {
+  const { createAgentRunRepository } = await import("../db/repositories/agent-runs");
+  const repo = createAgentRunRepository(db);
+
+  await repo.insertRun(data.run);
+
+  const messages = data.transcript.map((entry, index) => ({
+    id: randomUUID(),
+    run_id: data.run.id,
+    sequence: index,
+    role: entry.role,
+    content_json: JSON.stringify(entry.content),
+    tool_use_id: null,
+    tool_name: null,
+    input_tokens: (entry.usage as Record<string, number> | undefined)?.input_tokens ?? null,
+    output_tokens: (entry.usage as Record<string, number> | undefined)?.output_tokens ?? null,
+  }));
+
+  await repo.insertMessages(messages);
 }

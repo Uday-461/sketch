@@ -9,7 +9,7 @@ interface OnboardingData {
   slackWorkspace?: string;
   whatsappConnected: boolean;
   whatsappPhone?: string;
-  llmProvider: "anthropic" | "bedrock";
+  llmProvider: "anthropic" | "bedrock" | "litellm";
 }
 
 interface StepCompletionProps {
@@ -40,7 +40,12 @@ export function StepCompletion({ data, onGoToDashboard, isFinishing }: StepCompl
     },
     {
       label: "LLM",
-      value: data.llmProvider === "anthropic" ? "Anthropic (Sonnet)" : "AWS Bedrock (Sonnet)",
+      value:
+        data.llmProvider === "anthropic"
+          ? "Anthropic (Sonnet)"
+          : data.llmProvider === "bedrock"
+            ? "AWS Bedrock (Sonnet)"
+            : "LiteLLM Proxy",
       connected: true,
     },
   ] as const;

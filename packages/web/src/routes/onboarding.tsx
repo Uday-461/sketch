@@ -78,7 +78,9 @@ export function OnboardingPage({ initialSetupStatus }: { initialSetupStatus?: Se
   const [discordConnected, setDiscordConnected] = useState(setupStatus.discordConnected ?? false);
   const [discordUsername, setDiscordUsername] = useState<string | undefined>(undefined);
 
-  const [llmProvider, setLlmProvider] = useState<"anthropic" | "bedrock">(setupStatus.llmProvider ?? "anthropic");
+  const [llmProvider, setLlmProvider] = useState<"anthropic" | "bedrock" | "litellm">(
+    setupStatus.llmProvider ?? "anthropic",
+  );
   const [llmConnected, setLlmConnected] = useState(setupStatus.llmConnected);
 
   const goToStep = (nextStep: number) => {

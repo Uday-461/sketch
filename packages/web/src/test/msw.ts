@@ -54,14 +54,29 @@ export const handlers = [
     return HttpResponse.json({ success: true });
   }),
 
+  http.post("/api/setup/llm/verify", async () => {
+    return HttpResponse.json({ success: true });
+  }),
+
   http.post("/api/setup/llm", async ({ request }) => {
     const body = (await request.json()) as
       | { provider: "anthropic"; apiKey?: string }
-      | { provider: "bedrock"; awsAccessKeyId?: string; awsSecretAccessKey?: string; awsRegion?: string };
+      | { provider: "bedrock"; awsAccessKeyId?: string; awsSecretAccessKey?: string; awsRegion?: string }
+      | { provider: "litellm"; apiKey?: string; model?: string };
 
     if (body.provider === "anthropic") {
       if (!body.apiKey) {
         return HttpResponse.json({ error: { code: "BAD_REQUEST", message: "API key required" } }, { status: 400 });
+      }
+      return HttpResponse.json({ success: true });
+    }
+
+    if (body.provider === "litellm") {
+      if (!body.apiKey || !body.model) {
+        return HttpResponse.json(
+          { error: { code: "BAD_REQUEST", message: "API key and model required" } },
+          { status: 400 },
+        );
       }
       return HttpResponse.json({ success: true });
     }
@@ -175,6 +190,18 @@ export const handlers = [
 
   http.delete("/api/users/:id", () => {
     return HttpResponse.json({ success: true });
+  }),
+
+  http.get("/api/agent-runs", () => {
+    return HttpResponse.json({ runs: [], total: 0 });
+  }),
+
+  http.get("/api/agent-runs/stats", () => {
+    return HttpResponse.json({ totalCost: 0, totalRuns: 0, errorCount: 0, activeUsers: 0 });
+  }),
+
+  http.get("/api/agent-runs/:id", () => {
+    return HttpResponse.json({ error: { code: "NOT_FOUND", message: "Agent run not found" } }, { status: 404 });
   }),
 
   http.get("/api/auth/session", () => {

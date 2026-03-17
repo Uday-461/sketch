@@ -56,6 +56,11 @@ const llmSchema = z.discriminatedUnion("provider", [
     awsSecretAccessKey: z.string().min(1, "AWS Secret Access Key is required"),
     awsRegion: z.string().min(1, "AWS Region is required"),
   }),
+  z.object({
+    provider: z.literal("litellm"),
+    apiKey: z.string().min(1, "API key is required"),
+    model: z.string().min(1, "Model name is required"),
+  }),
 ]);
 
 async function verifyAnthropicApiKey(apiKey: string): Promise<void> {
@@ -87,6 +92,7 @@ type SettingsRepo = ReturnType<typeof createSettingsRepository>;
 interface SetupDeps {
   onSlackTokensUpdated?: (tokens?: { botToken: string; appToken: string }) => Promise<void>;
   onLlmSettingsUpdated?: () => Promise<void>;
+  verifyLiteLLM?: (config: { apiKey: string; model: string }) => Promise<void>;
 }
 
 export function setupRoutes(settings: SettingsRepo, deps: SetupDeps = {}) {
@@ -101,11 +107,18 @@ export function setupRoutes(settings: SettingsRepo, deps: SetupDeps = {}) {
     const hasBedrock =
       row?.llm_provider === "bedrock" &&
       Boolean(row?.aws_access_key_id?.trim() && row?.aws_secret_access_key?.trim() && row?.aws_region?.trim());
-    const hasLlm = Boolean(hasAnthropic || hasBedrock);
+    const hasLitellm =
+      row?.llm_provider === "litellm" && Boolean(row?.litellm_api_key?.trim() && row?.litellm_model?.trim());
+    const hasLlm = Boolean(hasAnthropic || hasBedrock || hasLitellm);
     const isCompleted = Boolean(row?.onboarding_completed_at);
     const currentStep = isCompleted ? 5 : hasLlm ? 5 : hasSlack ? 4 : hasIdentity ? 3 : hasAdmin ? 2 : 0;
     const hasTelegram = Boolean(row?.telegram_bot_token?.trim());
     const hasDiscord = Boolean(row?.discord_bot_token?.trim());
+
+    let llmProvider: "anthropic" | "bedrock" | "litellm" | null = null;
+    if (row?.llm_provider === "anthropic") llmProvider = "anthropic";
+    else if (row?.llm_provider === "bedrock") llmProvider = "bedrock";
+    else if (row?.llm_provider === "litellm") llmProvider = "litellm";
 
     return c.json({
       completed: isCompleted,
@@ -117,7 +130,7 @@ export function setupRoutes(settings: SettingsRepo, deps: SetupDeps = {}) {
       telegramConnected: hasTelegram,
       discordConnected: hasDiscord,
       llmConnected: hasLlm,
-      llmProvider: row?.llm_provider === "bedrock" ? "bedrock" : row?.llm_provider === "anthropic" ? "anthropic" : null,
+      llmProvider,
     });
   });
 
@@ -273,6 +286,18 @@ export function setupRoutes(settings: SettingsRepo, deps: SetupDeps = {}) {
       }
     }
 
+    if (parsed.data.provider === "litellm") {
+      if (!deps.verifyLiteLLM) {
+        return c.json({ error: { code: "SERVER_ERROR", message: "LiteLLM verification not available" } }, 500);
+      }
+      try {
+        await deps.verifyLiteLLM({ apiKey: parsed.data.apiKey.trim(), model: parsed.data.model.trim() });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "LiteLLM verification failed";
+        return c.json({ error: { code: "INVALID_LLM_SETTINGS", message } }, 400);
+      }
+    }
+
     return c.json({ success: true });
   });
 
@@ -299,14 +324,28 @@ export function setupRoutes(settings: SettingsRepo, deps: SetupDeps = {}) {
         awsAccessKeyId: null,
         awsSecretAccessKey: null,
         awsRegion: null,
+        litellmApiKey: null,
+        litellmModel: null,
       });
-    } else {
+    } else if (parsed.data.provider === "bedrock") {
       await settings.update({
         llmProvider: "bedrock",
         anthropicApiKey: null,
         awsAccessKeyId: parsed.data.awsAccessKeyId.trim(),
         awsSecretAccessKey: parsed.data.awsSecretAccessKey.trim(),
         awsRegion: parsed.data.awsRegion.trim(),
+        litellmApiKey: null,
+        litellmModel: null,
+      });
+    } else {
+      await settings.update({
+        llmProvider: "litellm",
+        anthropicApiKey: null,
+        awsAccessKeyId: null,
+        awsSecretAccessKey: null,
+        awsRegion: null,
+        litellmApiKey: parsed.data.apiKey.trim(),
+        litellmModel: parsed.data.model.trim(),
       });
     }
 

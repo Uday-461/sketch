@@ -21,6 +21,9 @@ export const configSchema = z.object({
   MAX_FILE_SIZE_MB: z.coerce.number().default(20),
   MAX_UPLOAD_SIZE_MB: z.coerce.number().default(50),
 
+  // LiteLLM
+  LITELLM_PORT: z.coerce.number().default(4000),
+
   // Server
   BASE_URL: z.string().optional(),
   DATA_DIR: z.string().default("./data"),

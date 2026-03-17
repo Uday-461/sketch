@@ -1850,3 +1850,171 @@ describe("RBAC", () => {
     });
   });
 });
+
+describe("Agent runs API", () => {
+  let db: Kysely<DB>;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+  });
+
+  afterEach(async () => {
+    try {
+      await db.destroy();
+    } catch {}
+  });
+
+  async function setupWithAdmin(app: ReturnType<typeof createApp>) {
+    await seedAdmin(db);
+    const settings = createSettingsRepository(db);
+    await settings.update({ onboardingCompletedAt: new Date().toISOString() });
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "admin@test.com", password: "testpassword123" }),
+    });
+    const adminCookie = loginRes.headers.get("set-cookie") ?? "";
+    const row = await settings.get();
+    const jwtSecret = row?.jwt_secret as string;
+    return { adminCookie, jwtSecret };
+  }
+
+  async function createMemberSession(jwtSecret: string, name = "Member User") {
+    const users = createUserRepository(db);
+    const user = await users.create({ name });
+    const token = await signJwt(user.id, "member", jwtSecret);
+    return { memberId: user.id, memberCookie: `sketch_session=${token}` };
+  }
+
+  async function insertRun(overrides: Record<string, unknown> = {}) {
+    const id = overrides.id ?? `run-${Math.random().toString(36).slice(2)}`;
+    await db
+      .insertInto("agent_runs")
+      .values({
+        id: id as string,
+        user_id: (overrides.user_id as string) ?? null,
+        workspace_key: (overrides.workspace_key as string) ?? "ws",
+        thread_key: "",
+        platform: (overrides.platform as string) ?? "slack",
+        session_id: "sess-1",
+        model: "claude-sonnet-4-20250514",
+        cost_usd: (overrides.cost_usd as number) ?? 0.05,
+        input_tokens: 1000,
+        output_tokens: 500,
+        cache_read_tokens: null,
+        cache_creation_tokens: null,
+        duration_ms: 5000,
+        duration_api_ms: 4000,
+        num_turns: 3,
+        status: (overrides.status as string) ?? "success",
+        error_type: null,
+        errors_json: null,
+        tools_used_json: null,
+        permission_denials_json: null,
+      })
+      .execute();
+    return id as string;
+  }
+
+  describe("GET /api/agent-runs", () => {
+    it("admin sees all runs", async () => {
+      const app = createApp(db, config);
+      const { adminCookie, jwtSecret } = await setupWithAdmin(app);
+      const { memberId } = await createMemberSession(jwtSecret);
+
+      await insertRun({ id: "r1", user_id: memberId });
+      await insertRun({ id: "r2", user_id: null });
+
+      const res = await app.request("/api/agent-runs", { headers: { Cookie: adminCookie } });
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.total).toBe(2);
+      expect(body.runs).toHaveLength(2);
+    });
+
+    it("member sees only own runs", async () => {
+      const app = createApp(db, config);
+      const { adminCookie, jwtSecret } = await setupWithAdmin(app);
+      const { memberId, memberCookie } = await createMemberSession(jwtSecret);
+
+      await insertRun({ id: "r1", user_id: memberId });
+      await insertRun({ id: "r2", user_id: "other-user" });
+
+      const res = await app.request("/api/agent-runs", { headers: { Cookie: memberCookie } });
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.total).toBe(1);
+      expect(body.runs[0].id).toBe("r1");
+    });
+  });
+
+  describe("GET /api/agent-runs/stats", () => {
+    it("admin can access stats", async () => {
+      const app = createApp(db, config);
+      const { adminCookie } = await setupWithAdmin(app);
+
+      await insertRun({ id: "r1", cost_usd: 0.1 });
+
+      const res = await app.request("/api/agent-runs/stats", { headers: { Cookie: adminCookie } });
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.totalRuns).toBe(1);
+      expect(body.totalCost).toBeCloseTo(0.1);
+    });
+
+    it("member gets 403 on stats", async () => {
+      const app = createApp(db, config);
+      const { jwtSecret } = await setupWithAdmin(app);
+      const { memberCookie } = await createMemberSession(jwtSecret);
+
+      const res = await app.request("/api/agent-runs/stats", { headers: { Cookie: memberCookie } });
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe("GET /api/agent-runs/:id", () => {
+    it("admin can view any run", async () => {
+      const app = createApp(db, config);
+      const { adminCookie } = await setupWithAdmin(app);
+      const runId = await insertRun({ user_id: "some-user" });
+
+      const res = await app.request(`/api/agent-runs/${runId}`, { headers: { Cookie: adminCookie } });
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.run.id).toBe(runId);
+      expect(body.messages).toBeDefined();
+    });
+
+    it("member cannot view other user's run", async () => {
+      const app = createApp(db, config);
+      const { jwtSecret } = await setupWithAdmin(app);
+      const { memberCookie } = await createMemberSession(jwtSecret);
+      const runId = await insertRun({ user_id: "other-user" });
+
+      const res = await app.request(`/api/agent-runs/${runId}`, { headers: { Cookie: memberCookie } });
+      expect(res.status).toBe(403);
+    });
+
+    it("member can view own run", async () => {
+      const app = createApp(db, config);
+      const { jwtSecret } = await setupWithAdmin(app);
+      const { memberId, memberCookie } = await createMemberSession(jwtSecret);
+      const runId = await insertRun({ user_id: memberId });
+
+      const res = await app.request(`/api/agent-runs/${runId}`, { headers: { Cookie: memberCookie } });
+      expect(res.status).toBe(200);
+    });
+
+    it("returns 404 for non-existent run", async () => {
+      const app = createApp(db, config);
+      const { adminCookie } = await setupWithAdmin(app);
+
+      const res = await app.request("/api/agent-runs/nonexistent", { headers: { Cookie: adminCookie } });
+      expect(res.status).toBe(404);
+    });
+  });
+});

@@ -8,6 +8,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import type { Kysely } from "kysely";
 import type { Logger } from "pino";
+import { agentRunRoutes } from "./api/agent-runs";
 import { authRoutes } from "./api/auth";
 import { channelRoutes } from "./api/channels";
 import { healthRoutes } from "./api/health";
@@ -43,6 +44,7 @@ interface AppDeps {
   onDiscordTokenUpdated?: (token: string) => Promise<void>;
   onDiscordDisconnect?: () => Promise<void>;
   onLlmSettingsUpdated?: () => Promise<void>;
+  verifyLiteLLM?: (config: { apiKey: string; model: string }) => Promise<void>;
   onSmtpUpdated?: () => Promise<void>;
   scheduler?: Pick<TaskScheduler, "pauseTask" | "resumeTask" | "removeTask">;
   logger?: Logger;
@@ -66,6 +68,7 @@ export function createApp(db: Kysely<DB>, config: Config, deps?: AppDeps) {
     setupRoutes(settings, {
       onSlackTokensUpdated: deps?.onSlackTokensUpdated,
       onLlmSettingsUpdated: deps?.onLlmSettingsUpdated,
+      verifyLiteLLM: deps?.verifyLiteLLM,
     }),
   );
   app.route("/api/settings", settingsRoutes(settings));
@@ -73,6 +76,7 @@ export function createApp(db: Kysely<DB>, config: Config, deps?: AppDeps) {
   app.route("/api/users", userRoutes(users, { settings, db, logger, config }));
   app.route("/api/mcp-servers", mcpServerRoutes(mcpServers, users));
   app.route("/api/workspace", createWorkspaceApi({ config }));
+  app.route("/api/agent-runs", agentRunRoutes(db));
   if (deps?.scheduler) {
     app.route("/api/scheduled-tasks", scheduledTaskRoutes(db, deps.scheduler));
   }

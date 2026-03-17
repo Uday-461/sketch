@@ -39,6 +39,8 @@ export function createSettingsRepository(db: Kysely<DB>) {
         awsRegion: string | null;
         telegramBotToken: string | null;
         discordBotToken: string | null;
+        litellmApiKey: string | null;
+        litellmModel: string | null;
         jwtSecret: string;
         smtpHost: string | null;
         smtpPort: number | null;
@@ -63,6 +65,8 @@ export function createSettingsRepository(db: Kysely<DB>) {
       if (data.awsRegion !== undefined) updates.aws_region = data.awsRegion;
       if (data.telegramBotToken !== undefined) updates.telegram_bot_token = data.telegramBotToken;
       if (data.discordBotToken !== undefined) updates.discord_bot_token = data.discordBotToken;
+      if (data.litellmApiKey !== undefined) updates.litellm_api_key = data.litellmApiKey;
+      if (data.litellmModel !== undefined) updates.litellm_model = data.litellmModel;
       if (data.smtpHost !== undefined) updates.smtp_host = data.smtpHost;
       if (data.smtpPort !== undefined) updates.smtp_port = data.smtpPort;
       if (data.smtpUser !== undefined) updates.smtp_user = data.smtpUser;

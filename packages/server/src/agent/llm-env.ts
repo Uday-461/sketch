@@ -3,7 +3,13 @@ import type { Logger } from "../logger";
 
 type LlmSettings = Pick<
   SettingsTable,
-  "llm_provider" | "anthropic_api_key" | "aws_access_key_id" | "aws_secret_access_key" | "aws_region"
+  | "llm_provider"
+  | "anthropic_api_key"
+  | "aws_access_key_id"
+  | "aws_secret_access_key"
+  | "aws_region"
+  | "litellm_api_key"
+  | "litellm_model"
 >;
 
 function unsetEnv(...keys: string[]) {
@@ -68,11 +74,36 @@ export function applyLlmEnvFromSettings(settings: LlmSettings | null, logger?: L
     return;
   }
 
+  if (settings.llm_provider === "litellm") {
+    if (!settings.litellm_api_key || !settings.litellm_model) {
+      logger?.warn(
+        {
+          llmProvider: settings.llm_provider,
+          hasLitellmApiKey: Boolean(settings.litellm_api_key),
+          hasLitellmModel: Boolean(settings.litellm_model),
+        },
+        "Incomplete LLM settings in DB; preserving existing environment-based LLM config",
+      );
+      return;
+    }
+
+    clearProviderRoutingEnv();
+    unsetEnv("ANTHROPIC_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION");
+    logger?.info({ llmProvider: "litellm", source: "db" }, "Configured LLM provider from DB settings");
+    return;
+  }
+
   logger?.warn(
     {
       llmProvider: settings.llm_provider,
-      supportedProviders: ["anthropic", "bedrock"],
+      supportedProviders: ["anthropic", "bedrock", "litellm"],
     },
     "Unsupported LLM provider in DB; preserving existing environment-based LLM config",
   );
+}
+
+export function applyLiteLLMProxyEnv(port: number, masterKey: string): void {
+  process.env.ANTHROPIC_BASE_URL = `http://localhost:${port}`;
+  process.env.ANTHROPIC_AUTH_TOKEN = masterKey;
+  process.env.ANTHROPIC_API_KEY = "";
 }

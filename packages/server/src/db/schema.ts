@@ -54,6 +54,8 @@ export interface SettingsTable {
   aws_region: string | null;
   telegram_bot_token: string | null;
   discord_bot_token: string | null;
+  litellm_api_key: string | null;
+  litellm_model: string | null;
   jwt_secret: string | null;
   smtp_host: string | null;
   smtp_port: number | null;
@@ -121,6 +123,43 @@ export interface ScheduledTasksTable {
   created_at: Generated<string>;
 }
 
+export interface AgentRunsTable {
+  id: string;
+  user_id: string | null;
+  workspace_key: string;
+  thread_key: Generated<string>;
+  platform: string;
+  session_id: string;
+  model: string | null;
+  cost_usd: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_creation_tokens: number | null;
+  duration_ms: number | null;
+  duration_api_ms: number | null;
+  num_turns: number | null;
+  status: Generated<string>;
+  error_type: string | null;
+  errors_json: string | null;
+  tools_used_json: string | null;
+  permission_denials_json: string | null;
+  created_at: Generated<string>;
+}
+
+export interface AgentMessagesTable {
+  id: string;
+  run_id: string;
+  sequence: number;
+  role: string;
+  content_json: string;
+  tool_use_id: string | null;
+  tool_name: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  created_at: Generated<string>;
+}
+
 export interface DB {
   users: UsersTable;
   channels: ChannelsTable;
@@ -133,4 +172,6 @@ export interface DB {
   mcp_servers: McpServersTable;
   chat_sessions: ChatSessionsTable;
   scheduled_tasks: ScheduledTasksTable;
+  agent_runs: AgentRunsTable;
+  agent_messages: AgentMessagesTable;
 }

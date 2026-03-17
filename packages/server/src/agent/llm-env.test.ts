@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyLlmEnvFromSettings } from "./llm-env";
+import { applyLiteLLMProxyEnv, applyLlmEnvFromSettings } from "./llm-env";
 
 const ENV_KEYS = [
   "CLAUDE_CODE_USE_BEDROCK",
@@ -63,6 +63,8 @@ describe("applyLlmEnvFromSettings", () => {
         aws_access_key_id: null,
         aws_secret_access_key: null,
         aws_region: null,
+        litellm_api_key: null,
+        litellm_model: null,
       },
       logger as never,
     );
@@ -90,6 +92,8 @@ describe("applyLlmEnvFromSettings", () => {
         aws_access_key_id: null,
         aws_secret_access_key: null,
         aws_region: null,
+        litellm_api_key: null,
+        litellm_model: null,
       },
       logger as never,
     );
@@ -113,6 +117,8 @@ describe("applyLlmEnvFromSettings", () => {
         aws_access_key_id: "AKIA...",
         aws_secret_access_key: "secret",
         aws_region: "us-west-2",
+        litellm_api_key: null,
+        litellm_model: null,
       },
       logger as never,
     );
@@ -140,6 +146,8 @@ describe("applyLlmEnvFromSettings", () => {
         aws_access_key_id: "",
         aws_secret_access_key: "secret",
         aws_region: "us-west-2",
+        litellm_api_key: null,
+        litellm_model: null,
       },
       logger as never,
     );
@@ -167,14 +175,95 @@ describe("applyLlmEnvFromSettings", () => {
         aws_access_key_id: null,
         aws_secret_access_key: null,
         aws_region: null,
+        litellm_api_key: null,
+        litellm_model: null,
       },
       logger as never,
     );
 
     expect(process.env.ANTHROPIC_API_KEY).toBe("existing-key");
     expect(logger.warn).toHaveBeenCalledWith(
-      { llmProvider: "vertex", supportedProviders: ["anthropic", "bedrock"] },
+      { llmProvider: "vertex", supportedProviders: ["anthropic", "bedrock", "litellm"] },
       "Unsupported LLM provider in DB; preserving existing environment-based LLM config",
     );
+  });
+
+  it("clears competing env for litellm", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-existing";
+    process.env.CLAUDE_CODE_USE_BEDROCK = "1";
+    process.env.AWS_ACCESS_KEY_ID = "aws-access";
+    process.env.ANTHROPIC_BASE_URL = "https://proxy.example.com";
+    const logger = { warn: vi.fn(), info: vi.fn() };
+
+    applyLlmEnvFromSettings(
+      {
+        llm_provider: "litellm",
+        anthropic_api_key: null,
+        aws_access_key_id: null,
+        aws_secret_access_key: null,
+        aws_region: null,
+        litellm_api_key: "sk-downstream-key",
+        litellm_model: "openrouter/anthropic/claude-sonnet-4",
+      },
+      logger as never,
+    );
+
+    expect(process.env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(process.env.CLAUDE_CODE_USE_BEDROCK).toBeUndefined();
+    expect(process.env.AWS_ACCESS_KEY_ID).toBeUndefined();
+    expect(process.env.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(logger.info).toHaveBeenCalledWith(
+      { llmProvider: "litellm", source: "db" },
+      "Configured LLM provider from DB settings",
+    );
+  });
+
+  it("preserves env for incomplete litellm settings", () => {
+    process.env.ANTHROPIC_API_KEY = "existing-key";
+    const logger = { warn: vi.fn(), info: vi.fn() };
+
+    applyLlmEnvFromSettings(
+      {
+        llm_provider: "litellm",
+        anthropic_api_key: null,
+        aws_access_key_id: null,
+        aws_secret_access_key: null,
+        aws_region: null,
+        litellm_api_key: "sk-downstream-key",
+        litellm_model: null,
+      },
+      logger as never,
+    );
+
+    expect(process.env.ANTHROPIC_API_KEY).toBe("existing-key");
+    expect(logger.warn).toHaveBeenCalledWith(
+      { llmProvider: "litellm", hasLitellmApiKey: true, hasLitellmModel: false },
+      "Incomplete LLM settings in DB; preserving existing environment-based LLM config",
+    );
+  });
+});
+
+describe("applyLiteLLMProxyEnv", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+  const envKeys = ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"] as const;
+
+  afterEach(() => {
+    for (const key of envKeys) {
+      if (savedEnv[key] === undefined) {
+        Reflect.deleteProperty(process.env, key);
+      } else {
+        process.env[key] = savedEnv[key];
+      }
+    }
+  });
+
+  it("sets proxy env vars", () => {
+    for (const key of envKeys) savedEnv[key] = process.env[key];
+
+    applyLiteLLMProxyEnv(4000, "sk-litellm-test-key");
+
+    expect(process.env.ANTHROPIC_BASE_URL).toBe("http://localhost:4000");
+    expect(process.env.ANTHROPIC_AUTH_TOKEN).toBe("sk-litellm-test-key");
+    expect(process.env.ANTHROPIC_API_KEY).toBe("");
   });
 });

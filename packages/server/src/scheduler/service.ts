@@ -270,6 +270,7 @@ export class TaskScheduler {
           userMessage: `[Scheduled Task] ${task.prompt}`,
           workspaceDir,
           userName: "System",
+          userId: task.created_by ?? null,
           logger,
           platform: task.platform as Platform,
           onMessage,

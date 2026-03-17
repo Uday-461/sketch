@@ -95,7 +95,7 @@ export interface SetupStatus {
   telegramConnected: boolean;
   discordConnected: boolean;
   llmConnected: boolean;
-  llmProvider: "anthropic" | "bedrock" | null;
+  llmProvider: "anthropic" | "bedrock" | "litellm" | null;
 }
 
 export interface SessionResponse {
@@ -114,6 +114,54 @@ export interface SkillRecord {
   body: string;
 }
 
+export interface AgentRunSummary {
+  id: string;
+  userId: string | null;
+  platform: string;
+  model: string | null;
+  costUsd: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  numTurns: number | null;
+  durationMs: number | null;
+  status: "success" | "error";
+  createdAt: string;
+  userName: string | null;
+}
+
+export interface AgentRunStats {
+  totalCost: number;
+  totalRuns: number;
+  errorCount: number;
+  activeUsers: number;
+}
+
+export interface AgentRunDetail extends AgentRunSummary {
+  workspaceKey: string;
+  threadKey: string;
+  sessionId: string;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  durationApiMs: number | null;
+  errorType: string | null;
+  errorsJson: string | null;
+  toolsUsedJson: string | null;
+  permissionDenialsJson: string | null;
+}
+
+export interface AgentRunMessage {
+  id: string;
+  runId: string;
+  sequence: number;
+  role: string;
+  contentJson: string;
+  toolUseId: string | null;
+  toolName: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  createdAt: string;
+}
+
 export const api = {
   setup: {
     status() {
@@ -128,7 +176,8 @@ export const api = {
     verifyLlm(
       data:
         | { provider: "anthropic"; apiKey: string }
-        | { provider: "bedrock"; awsAccessKeyId: string; awsSecretAccessKey: string; awsRegion: string },
+        | { provider: "bedrock"; awsAccessKeyId: string; awsSecretAccessKey: string; awsRegion: string }
+        | { provider: "litellm"; apiKey: string; model: string },
     ) {
       return request<{ success: boolean }>("/api/setup/llm/verify", {
         method: "POST",
@@ -156,7 +205,8 @@ export const api = {
     llm(
       data:
         | { provider: "anthropic"; apiKey: string }
-        | { provider: "bedrock"; awsAccessKeyId: string; awsSecretAccessKey: string; awsRegion: string },
+        | { provider: "bedrock"; awsAccessKeyId: string; awsSecretAccessKey: string; awsRegion: string }
+        | { provider: "litellm"; apiKey: string; model: string },
     ) {
       return request<{ success: boolean }>("/api/setup/llm", {
         method: "POST",
@@ -412,6 +462,23 @@ export const api = {
       return request<void>(`/api/mcp-servers/${providerId}/connections/${connectionId}`, {
         method: "DELETE",
       });
+    },
+  },
+  agentRuns: {
+    async list(filters?: { limit?: number; offset?: number; platform?: string }) {
+      const params = new URLSearchParams();
+      if (filters?.limit) params.set("limit", String(filters.limit));
+      if (filters?.offset) params.set("offset", String(filters.offset));
+      if (filters?.platform) params.set("platform", filters.platform);
+      const qs = params.toString();
+      return request<{ runs: AgentRunSummary[]; total: number }>(`/api/agent-runs${qs ? `?${qs}` : ""}`);
+    },
+    async stats(days?: number) {
+      const params = days ? `?days=${days}` : "";
+      return request<AgentRunStats>(`/api/agent-runs/stats${params}`);
+    },
+    async get(id: string) {
+      return request<{ run: AgentRunDetail; messages: AgentRunMessage[] }>(`/api/agent-runs/${id}`);
     },
   },
   workspace: {

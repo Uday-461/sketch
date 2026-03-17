@@ -4,7 +4,7 @@
  * from tests with a custom Config and { connect: false }.
  */
 import { serve } from "@hono/node-server";
-import { applyLlmEnvFromSettings } from "./agent/llm-env";
+import { applyLiteLLMProxyEnv, applyLlmEnvFromSettings } from "./agent/llm-env";
 import { runAgent } from "./agent/runner";
 import type { McpServerConfig } from "./agent/runner";
 import type { Config } from "./config";
@@ -19,6 +19,7 @@ import { wireDiscordHandlers } from "./discord/adapter";
 import { DiscordBot } from "./discord/bot";
 import { createApp } from "./http";
 import { buildMcpConfig } from "./integrations/factory";
+import { LiteLLMManager } from "./litellm/manager";
 import { createLogger } from "./logger";
 import { QueueManager } from "./queue";
 import { TaskScheduler } from "./scheduler/service";
@@ -42,6 +43,7 @@ export interface ServerHandle {
   getSlack: () => SlackBot | null;
   getTelegram: () => TelegramBot | null;
   getDiscord: () => DiscordBot | null;
+  litellm: LiteLLMManager;
   shutdown: () => Promise<void>;
 }
 
@@ -75,10 +77,24 @@ export async function createServer(config: Config, options?: CreateServerOptions
   const mcpServersRepo = createMcpServerRepository(db);
   const whatsappGroupsRepo = createWhatsAppGroupRepository(db);
 
-  // 4. LLM env from DB
+  // 4. LiteLLM manager + LLM env from DB
+  const litellm = new LiteLLMManager({ dataDir: config.DATA_DIR, port: config.LITELLM_PORT, logger });
+
   async function applyLlmEnvFromDb() {
     const settingsRow = await settingsRepo.get();
     applyLlmEnvFromSettings(settingsRow, logger);
+
+    if (settingsRow?.llm_provider === "litellm" && settingsRow.litellm_api_key && settingsRow.litellm_model) {
+      if (!litellm.isRunning()) {
+        await litellm.start({ apiKey: settingsRow.litellm_api_key, model: settingsRow.litellm_model });
+      }
+      const masterKey = litellm.getMasterKey();
+      if (masterKey) {
+        applyLiteLLMProxyEnv(litellm.getPort(), masterKey);
+      }
+    } else if (litellm.isRunning()) {
+      await litellm.stop();
+    }
   }
   await applyLlmEnvFromDb();
 
@@ -292,6 +308,14 @@ export async function createServer(config: Config, options?: CreateServerOptions
     onLlmSettingsUpdated: async () => {
       await applyLlmEnvFromDb();
     },
+    verifyLiteLLM: async (cfg) => {
+      const verifier = new LiteLLMManager({ dataDir: config.DATA_DIR, port: config.LITELLM_PORT + 1, logger });
+      try {
+        await verifier.start(cfg);
+      } finally {
+        await verifier.stop();
+      }
+    },
     onSmtpUpdated: async () => {
       logger.info("SMTP configuration updated");
     },
@@ -330,6 +354,7 @@ export async function createServer(config: Config, options?: CreateServerOptions
     await whatsapp.stop();
     if (telegram) await telegram.stop();
     if (discord) await discord.stop();
+    await litellm.stop();
     server.close();
     await db.destroy();
   }
@@ -342,6 +367,7 @@ export async function createServer(config: Config, options?: CreateServerOptions
     getSlack: () => slack,
     getTelegram: () => telegram,
     getDiscord: () => discord,
+    litellm,
     shutdown,
   };
 }
