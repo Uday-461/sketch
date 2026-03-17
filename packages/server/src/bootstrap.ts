@@ -15,6 +15,8 @@ import { createMcpServerRepository } from "./db/repositories/mcp-servers";
 import { createSettingsRepository } from "./db/repositories/settings";
 import { createUserRepository } from "./db/repositories/users";
 import { createWhatsAppGroupRepository } from "./db/repositories/whatsapp-groups";
+import { wireDiscordHandlers } from "./discord/adapter";
+import { DiscordBot } from "./discord/bot";
 import { createApp } from "./http";
 import { buildMcpConfig } from "./integrations/factory";
 import { createLogger } from "./logger";
@@ -26,6 +28,8 @@ import type { SlackBot } from "./slack/bot";
 import { createSlackStartupManager } from "./slack/startup";
 import { ThreadBuffer } from "./slack/thread-buffer";
 import { UserCache } from "./slack/user-cache";
+import { wireTelegramHandlers } from "./telegram/adapter";
+import { TelegramBot } from "./telegram/bot";
 import { wireWhatsAppHandlers } from "./whatsapp/adapter";
 import { WhatsAppBot } from "./whatsapp/bot";
 import { GroupBuffer } from "./whatsapp/group-buffer";
@@ -36,6 +40,8 @@ export interface ServerHandle {
   db: ReturnType<typeof createDatabase>;
   whatsapp: WhatsAppBot;
   getSlack: () => SlackBot | null;
+  getTelegram: () => TelegramBot | null;
+  getDiscord: () => DiscordBot | null;
   shutdown: () => Promise<void>;
 }
 
@@ -100,6 +106,12 @@ export async function createServer(config: Config, options?: CreateServerOptions
   const whatsapp = new WhatsAppBot({ db, logger, groupMetadataStore: whatsappGroupsRepo });
   const groupBuffer = new GroupBuffer();
 
+  // 8a. Telegram + Discord
+  let telegram: TelegramBot | null = null;
+  const telegramGroupBuffer = new GroupBuffer();
+  let discord: DiscordBot | null = null;
+  const discordGroupBuffer = new GroupBuffer();
+
   // 8.5. Task scheduler — getSlack is a lazy getter so the live slack reference is captured correctly
   const scheduler = new TaskScheduler({
     db,
@@ -108,6 +120,8 @@ export async function createServer(config: Config, options?: CreateServerOptions
     queueManager,
     getSlack: () => slack,
     whatsapp,
+    getTelegram: () => telegram,
+    getDiscord: () => discord,
     settingsRepo,
     runAgent,
     buildMcpServers,
@@ -118,6 +132,64 @@ export async function createServer(config: Config, options?: CreateServerOptions
     },
   });
   await scheduler.start();
+
+  async function startTelegramIfConfigured(token?: string): Promise<void> {
+    const botToken = token ?? (await settingsRepo.get())?.telegram_bot_token;
+    if (!botToken) return;
+
+    if (telegram) {
+      await telegram.stop();
+    }
+
+    telegram = new TelegramBot({ token: botToken, logger });
+    wireTelegramHandlers(telegram, {
+      db,
+      config,
+      logger,
+      repos: { users, settings: settingsRepo },
+      queue: queueManager,
+      groupBuffer: telegramGroupBuffer,
+      runAgent,
+      buildMcpServers,
+      findIntegrationProvider: async () => {
+        const row = await mcpServersRepo.findIntegrationProvider();
+        if (!row || row.type == null) return null;
+        return { type: row.type, credentials: row.credentials };
+      },
+      scheduler,
+    });
+    await telegram.start();
+    logger.info("Telegram bot started");
+  }
+
+  async function startDiscordIfConfigured(token?: string): Promise<void> {
+    const botToken = token ?? (await settingsRepo.get())?.discord_bot_token;
+    if (!botToken) return;
+
+    if (discord) {
+      await discord.stop();
+    }
+
+    discord = new DiscordBot({ token: botToken, logger });
+    wireDiscordHandlers(discord, {
+      db,
+      config,
+      logger,
+      repos: { users, settings: settingsRepo },
+      queue: queueManager,
+      groupBuffer: discordGroupBuffer,
+      runAgent,
+      buildMcpServers,
+      findIntegrationProvider: async () => {
+        const row = await mcpServersRepo.findIntegrationProvider();
+        if (!row || row.type == null) return null;
+        return { type: row.type, credentials: row.credentials };
+      },
+      scheduler,
+    });
+    await discord.start();
+    logger.info("Discord bot started");
+  }
 
   const slackAdapterDeps = {
     db,
@@ -178,6 +250,8 @@ export async function createServer(config: Config, options?: CreateServerOptions
   const app = createApp(db, config, {
     whatsapp,
     getSlack: () => slack,
+    getTelegram: () => telegram,
+    getDiscord: () => discord,
     scheduler,
     onSlackTokensUpdated: async (tokens) => {
       if (!tokens) return;
@@ -190,6 +264,26 @@ export async function createServer(config: Config, options?: CreateServerOptions
       }
       await settingsRepo.update({ slackBotToken: null, slackAppToken: null });
       logger.info("Slack disconnected and tokens cleared");
+    },
+    onTelegramTokenUpdated: async (token) => {
+      await startTelegramIfConfigured(token);
+    },
+    onTelegramDisconnect: async () => {
+      if (telegram) {
+        await telegram.stop();
+        telegram = null;
+      }
+      logger.info("Telegram disconnected");
+    },
+    onDiscordTokenUpdated: async (token) => {
+      await startDiscordIfConfigured(token);
+    },
+    onDiscordDisconnect: async () => {
+      if (discord) {
+        await discord.stop();
+        discord = null;
+      }
+      logger.info("Discord disconnected");
     },
     onLlmSettingsUpdated: async () => {
       await applyLlmEnvFromDb();
@@ -211,8 +305,16 @@ export async function createServer(config: Config, options?: CreateServerOptions
       logger.info("WhatsApp not paired — use GET /api/channels/whatsapp/pair to connect");
     }
 
-    if (!slack && !whatsappConnected) {
-      logger.info("No channels active — pair WhatsApp via GET /api/channels/whatsapp/pair or configure Slack tokens");
+    await startTelegramIfConfigured().catch((err) => {
+      logger.warn({ err }, "Failed to start Telegram bot");
+    });
+
+    await startDiscordIfConfigured().catch((err) => {
+      logger.warn({ err }, "Failed to start Discord bot");
+    });
+
+    if (!slack && !whatsappConnected && !telegram && !discord) {
+      logger.info("No channels active — configure at least one channel to get started");
     }
   }
 
@@ -222,6 +324,8 @@ export async function createServer(config: Config, options?: CreateServerOptions
     scheduler.stop();
     if (slack) await slack.stop();
     await whatsapp.stop();
+    if (telegram) await telegram.stop();
+    if (discord) await discord.stop();
     server.close();
     await db.destroy();
   }
@@ -232,6 +336,8 @@ export async function createServer(config: Config, options?: CreateServerOptions
     db,
     whatsapp,
     getSlack: () => slack,
+    getTelegram: () => telegram,
+    getDiscord: () => discord,
     shutdown,
   };
 }

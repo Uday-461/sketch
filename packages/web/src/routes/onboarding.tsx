@@ -41,6 +41,8 @@ const defaultSetupStatus: SetupStatus = {
   orgName: null,
   botName: "Sketch",
   slackConnected: false,
+  telegramConnected: false,
+  discordConnected: false,
   llmConnected: false,
   llmProvider: null,
 };
@@ -70,6 +72,12 @@ export function OnboardingPage({ initialSetupStatus }: { initialSetupStatus?: Se
   const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [whatsappPhone, setWhatsappPhone] = useState<string | undefined>(undefined);
 
+  const [telegramConnected, setTelegramConnected] = useState(setupStatus.telegramConnected ?? false);
+  const [telegramUsername, setTelegramUsername] = useState<string | undefined>(undefined);
+
+  const [discordConnected, setDiscordConnected] = useState(setupStatus.discordConnected ?? false);
+  const [discordUsername, setDiscordUsername] = useState<string | undefined>(undefined);
+
   const [llmProvider, setLlmProvider] = useState<"anthropic" | "bedrock">(setupStatus.llmProvider ?? "anthropic");
   const [llmConnected, setLlmConnected] = useState(setupStatus.llmConnected);
 
@@ -85,6 +93,10 @@ export function OnboardingPage({ initialSetupStatus }: { initialSetupStatus?: Se
     slackWorkspace,
     whatsappConnected,
     whatsappPhone,
+    telegramConnected,
+    telegramUsername,
+    discordConnected,
+    discordUsername,
     llmProvider,
     llmConnected,
     invitedCount: 0,
@@ -246,16 +258,28 @@ export function OnboardingPage({ initialSetupStatus }: { initialSetupStatus?: Se
           initialSlackWorkspace={slackWorkspace}
           initialWhatsappConnected={whatsappConnected}
           initialWhatsappPhone={whatsappPhone}
+          initialTelegramConnected={telegramConnected}
+          initialTelegramUsername={telegramUsername}
+          initialDiscordConnected={discordConnected}
+          initialDiscordUsername={discordUsername}
           onNext={({
             slackConnected: slackOk,
             slackWorkspace: workspace,
             whatsappConnected: waOk,
             whatsappPhone: waPhone,
+            telegramConnected: tgOk,
+            telegramUsername: tgUsername,
+            discordConnected: dcOk,
+            discordUsername: dcUsername,
           }) => {
             setSlackConnected(slackOk);
             setSlackWorkspace(workspace);
             setWhatsappConnected(waOk);
             setWhatsappPhone(waPhone);
+            setTelegramConnected(tgOk);
+            setTelegramUsername(tgUsername);
+            setDiscordConnected(dcOk);
+            setDiscordUsername(dcUsername);
             goToStep(4);
           }}
         />

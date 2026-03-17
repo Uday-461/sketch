@@ -98,6 +98,127 @@ describe("buildSystemContext", () => {
     });
   });
 
+  describe("telegram platform", () => {
+    const result = buildSystemContext({
+      platform: "telegram",
+      userName: "Charlie",
+      workspaceDir: "/data/workspaces/u789",
+    });
+
+    it("includes Telegram formatting rules", () => {
+      expect(result).toContain("## Platform: Telegram");
+      expect(result).toContain("*bold*");
+      expect(result).toContain("_italic_");
+      expect(result).toContain("~strikethrough~");
+      expect(result).toContain("`code`");
+    });
+
+    it("does not include Slack or WhatsApp specific rules", () => {
+      expect(result).not.toContain("mrkdwn");
+      expect(result).not.toContain("## Platform: Slack");
+      expect(result).not.toContain("## Platform: WhatsApp");
+    });
+
+    it("includes no-tables instruction", () => {
+      expect(result).toContain("Do not use tables");
+    });
+
+    it("includes no-markdown-links instruction", () => {
+      expect(result).toContain("Do not use markdown links");
+      expect(result).toContain("write URLs inline");
+    });
+  });
+
+  describe("discord platform", () => {
+    const result = buildSystemContext({
+      platform: "discord",
+      userName: "Dave",
+      workspaceDir: "/data/workspaces/u012",
+    });
+
+    it("includes Discord formatting rules", () => {
+      expect(result).toContain("## Platform: Discord");
+      expect(result).toContain("**bold**");
+      expect(result).toContain("*italic*");
+      expect(result).toContain("~~strikethrough~~");
+      expect(result).toContain("__underline__");
+      expect(result).toContain("`code`");
+    });
+
+    it("does not include Slack or WhatsApp specific rules", () => {
+      expect(result).not.toContain("mrkdwn");
+      expect(result).not.toContain("## Platform: Slack");
+      expect(result).not.toContain("## Platform: WhatsApp");
+    });
+
+    it("includes no-tables instruction", () => {
+      expect(result).toContain("Do not use tables");
+    });
+
+    it("supports markdown links", () => {
+      expect(result).toContain("[text](url)");
+    });
+  });
+
+  describe("telegram group context", () => {
+    const result = buildSystemContext({
+      platform: "telegram",
+      userName: "Alice",
+      workspaceDir: "/data/workspaces/tg-group-123",
+      telegramGroupContext: {
+        groupName: "Dev Team",
+        groupDescription: "Development discussions",
+      },
+    });
+
+    it("includes group name", () => {
+      expect(result).toContain('Telegram Group "Dev Team"');
+    });
+
+    it("includes group description", () => {
+      expect(result).toContain("Group description: Development discussions");
+    });
+
+    it("includes shared workspace note", () => {
+      expect(result).toContain("Multiple users share this workspace");
+    });
+
+    it("includes address-by-name instruction", () => {
+      expect(result).toContain("Address the user who mentioned you by name");
+    });
+
+    it("includes shared memory note", () => {
+      expect(result).toContain("shared by all users");
+    });
+  });
+
+  describe("discord channel context", () => {
+    const result = buildSystemContext({
+      platform: "discord",
+      userName: "Bob",
+      workspaceDir: "/data/workspaces/discord-g1-c1",
+      discordChannelContext: {
+        channelName: "general",
+      },
+    });
+
+    it("includes channel name", () => {
+      expect(result).toContain("Discord Channel #general");
+    });
+
+    it("includes shared workspace note", () => {
+      expect(result).toContain("Multiple users share this workspace");
+    });
+
+    it("includes address-by-name instruction", () => {
+      expect(result).toContain("Address the user who mentioned you by name");
+    });
+
+    it("includes shared memory note", () => {
+      expect(result).toContain("shared by all users");
+    });
+  });
+
   describe("channel context", () => {
     const result = buildSystemContext({
       platform: "slack",

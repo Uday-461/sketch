@@ -387,7 +387,7 @@ describe("OnboardingPage navigation and flow", () => {
 
     await user.type(screen.getByLabelText("Bot Token"), "xoxb-test-bot-token");
     await user.type(screen.getByLabelText("App-Level Token"), "xapp-test-app-token");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(screen.getAllByRole("button", { name: "Connect" })[0]);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
     });
@@ -424,7 +424,7 @@ describe("OnboardingPage navigation and flow", () => {
 
     await user.type(screen.getByLabelText("Bot Token"), "xoxb-test-bot-token");
     await user.type(screen.getByLabelText("App-Level Token"), "xapp-test-app-token");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(screen.getAllByRole("button", { name: "Connect" })[0]);
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
@@ -447,6 +447,8 @@ describe("OnboardingPage navigation and flow", () => {
           orgName: "Acme",
           botName: "Sketch",
           slackConnected: true,
+          telegramConnected: false,
+          discordConnected: false,
           llmConnected: false,
           llmProvider: null,
         }}
@@ -515,7 +517,7 @@ describe("OnboardingPage navigation and flow", () => {
     // Step 3
     await user.type(screen.getByLabelText("Bot Token"), "xoxb-test-bot-token");
     await user.type(screen.getByLabelText("App-Level Token"), "xapp-test-app-token");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(screen.getAllByRole("button", { name: "Connect" })[0]);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
     });

@@ -101,7 +101,13 @@ describe("TeamPage", () => {
       const createFn = vi.fn();
       server.use(
         http.post("/api/users", async ({ request }) => {
-          const body = (await request.json()) as { name: string; email: string | null; whatsappNumber: string | null };
+          const body = (await request.json()) as {
+            name: string;
+            email: string | null;
+            whatsappNumber: string | null;
+            telegramUserId: string | null;
+            discordUserId: string | null;
+          };
           createFn(body);
           return HttpResponse.json(
             {
@@ -111,6 +117,8 @@ describe("TeamPage", () => {
                 email: body.email,
                 slack_user_id: null,
                 whatsapp_number: body.whatsappNumber,
+                telegram_user_id: body.telegramUserId,
+                discord_user_id: body.discordUserId,
                 created_at: new Date().toISOString(),
               },
             },
@@ -142,6 +150,8 @@ describe("TeamPage", () => {
           name: "Charlie",
           email: "charlie@test.com",
           whatsappNumber: "+14155551234",
+          telegramUserId: null,
+          discordUserId: null,
         });
       });
     });
@@ -191,6 +201,8 @@ describe("TeamPage", () => {
               email: "admin@test.com",
               slack_user_id: null,
               whatsapp_number: null,
+              telegram_user_id: null,
+              discord_user_id: null,
               created_at: "2026-01-01T00:00:00Z",
             },
           ],

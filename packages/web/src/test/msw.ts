@@ -14,6 +14,8 @@ export const handlers = [
       orgName: null,
       botName: "Sketch",
       slackConnected: false,
+      telegramConnected: false,
+      discordConnected: false,
       llmConnected: false,
       llmProvider: null,
     });
@@ -97,6 +99,8 @@ export const handlers = [
       channels: [
         { platform: "slack", configured: false, connected: null, phoneNumber: null },
         { platform: "whatsapp", configured: false, connected: null, phoneNumber: null },
+        { platform: "telegram", configured: false, connected: null, phoneNumber: null, botUsername: null },
+        { platform: "discord", configured: false, connected: null, phoneNumber: null, botUsername: null },
       ],
     });
   }),
@@ -110,6 +114,8 @@ export const handlers = [
           email: null,
           slack_user_id: "U001",
           whatsapp_number: null,
+          telegram_user_id: null,
+          discord_user_id: null,
           created_at: "2026-01-01T00:00:00Z",
         },
         {
@@ -118,6 +124,8 @@ export const handlers = [
           email: null,
           slack_user_id: null,
           whatsapp_number: "+919876543210",
+          telegram_user_id: null,
+          discord_user_id: null,
           created_at: "2026-01-02T00:00:00Z",
         },
       ],
@@ -140,6 +148,8 @@ export const handlers = [
           email: null,
           slack_user_id: null,
           whatsapp_number: body.whatsappNumber,
+          telegram_user_id: null,
+          discord_user_id: null,
           created_at: new Date().toISOString(),
         },
       },
@@ -156,6 +166,8 @@ export const handlers = [
         email: null,
         slack_user_id: "U001",
         whatsapp_number: body.whatsappNumber ?? null,
+        telegram_user_id: null,
+        discord_user_id: null,
         created_at: "2026-01-01T00:00:00Z",
       },
     });

@@ -1,5 +1,6 @@
 import type { Attachment } from "../files";
 import { formatAttachmentsForPrompt } from "../files";
+import type { Platform } from "../scheduler/types";
 
 export interface BufferedMessage {
   userName: string;
@@ -18,7 +19,7 @@ export interface BufferedMessage {
  * SDK session resumes (system prompt content does not survive resume).
  */
 export function buildSystemContext(params: {
-  platform: "slack" | "whatsapp";
+  platform: Platform;
   userName: string;
   userEmail?: string | null;
   workspaceDir: string;
@@ -30,6 +31,13 @@ export function buildSystemContext(params: {
   groupContext?: {
     groupName: string;
     groupDescription?: string;
+  };
+  telegramGroupContext?: {
+    groupName: string;
+    groupDescription?: string;
+  };
+  discordChannelContext?: {
+    channelName: string;
   };
 }): string {
   const sections: string[] = [];
@@ -61,6 +69,35 @@ export function buildSystemContext(params: {
     );
   }
 
+  if (params.platform === "telegram") {
+    sections.push(
+      "## Platform: Telegram",
+      "You are responding on Telegram. Use Telegram MarkdownV2 formatting:",
+      "- *bold* for emphasis",
+      "- _italic_ for secondary emphasis",
+      "- `code` for inline code, ```code blocks``` for multi-line",
+      "- ~strikethrough~ for corrections",
+      "- Do not use tables — they render poorly on Telegram. Use bullet lists instead",
+      "- Do not use markdown links like [text](url) — write URLs inline",
+      "- Keep responses concise",
+    );
+  }
+
+  if (params.platform === "discord") {
+    sections.push(
+      "## Platform: Discord",
+      "You are responding on Discord. Use Discord markdown formatting:",
+      "- **bold** for emphasis",
+      "- *italic* for secondary emphasis",
+      "- `code` for inline code, ```code blocks``` for multi-line",
+      "- ~~strikethrough~~ for corrections",
+      "- __underline__ for additional emphasis",
+      "- [text](url) for links",
+      "- Do not use tables — they render poorly on Discord. Use bullet lists instead",
+      "- Keep responses concise",
+    );
+  }
+
   if (params.channelContext) {
     sections.push(
       `## Context: Slack Channel #${params.channelContext.channelName}`,
@@ -79,6 +116,26 @@ export function buildSystemContext(params: {
       "Address the user who mentioned you by name. Keep responses focused and concise.",
     );
     sections.push(...lines);
+  }
+
+  if (params.telegramGroupContext) {
+    const lines = [`## Context: Telegram Group "${params.telegramGroupContext.groupName}"`];
+    if (params.telegramGroupContext.groupDescription) {
+      lines.push(`Group description: ${params.telegramGroupContext.groupDescription}`);
+    }
+    lines.push(
+      "You are responding in a shared Telegram group. Multiple users share this workspace and can see your responses.",
+      "Address the user who mentioned you by name. Keep responses focused and concise.",
+    );
+    sections.push(...lines);
+  }
+
+  if (params.discordChannelContext) {
+    sections.push(
+      `## Context: Discord Channel #${params.discordChannelContext.channelName}`,
+      "You are responding in a shared Discord channel. Multiple users share this workspace and can see your responses.",
+      "Address the user who mentioned you by name. Keep responses focused and concise.",
+    );
   }
 
   if (params.orgName || params.botName) {
@@ -136,7 +193,7 @@ export function buildSystemContext(params: {
     "If the user asks what you remember, refer to their contents.",
   );
 
-  if (params.channelContext || params.groupContext) {
+  if (params.channelContext || params.groupContext || params.telegramGroupContext || params.discordChannelContext) {
     sections.push("Note: In this workspace, the CLAUDE.md is shared by all users.");
   }
 
@@ -147,7 +204,7 @@ export function buildSystemContext(params: {
     "Session mode defaults: DM and threads default to 'chat', top-level channel and group default to 'fresh'. Usually omit session_mode.",
   );
 
-  if (!params.channelContext && !params.groupContext) {
+  if (!params.channelContext && !params.groupContext && !params.telegramGroupContext && !params.discordChannelContext) {
     sections.push("## User", `Name: ${params.userName}`, `Email: ${params.userEmail || "not configured"}`);
   }
 
