@@ -301,9 +301,11 @@ export class LiteLLMManager {
     while (Date.now() < deadline) {
       try {
         const res = await fetch(url, { headers });
-        if (res.ok) return;
+        // Accept any HTTP response — LiteLLM returns 500 on /health when it can't
+        // validate models against the provider, but the proxy is still functional.
+        if (res.status > 0) return;
       } catch {
-        // Not ready yet
+        // Not ready yet — connection refused
       }
       await new Promise((r) => setTimeout(r, 2000));
     }
