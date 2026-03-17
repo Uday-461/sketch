@@ -1,7 +1,7 @@
 import SQLite from "better-sqlite3";
 import { Kysely, SqliteDialect } from "kysely";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { down, up } from "./017-telegram-discord";
+import { down, up } from "./016-telegram-discord";
 
 function createDbWithTables(): Kysely<unknown> {
   const db = new Kysely<unknown>({
@@ -23,7 +23,7 @@ async function seedTables(db: Kysely<unknown>): Promise<void> {
     .execute();
 }
 
-describe("017-telegram-discord migration", () => {
+describe("016-telegram-discord migration", () => {
   let db: Kysely<unknown>;
 
   beforeEach(async () => {
