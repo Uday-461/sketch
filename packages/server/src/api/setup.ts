@@ -350,7 +350,12 @@ export function setupRoutes(settings: SettingsRepo, deps: SetupDeps = {}) {
     }
 
     if (deps.onLlmSettingsUpdated) {
-      await deps.onLlmSettingsUpdated();
+      try {
+        await deps.onLlmSettingsUpdated();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to apply LLM settings";
+        return c.json({ error: { code: "LLM_UPDATE_FAILED", message } }, 500);
+      }
     }
 
     return c.json({ success: true });

@@ -85,8 +85,11 @@ export async function createServer(config: Config, options?: CreateServerOptions
     applyLlmEnvFromSettings(settingsRow, logger);
 
     if (settingsRow?.llm_provider === "litellm" && settingsRow.litellm_api_key && settingsRow.litellm_model) {
+      const cfg = { apiKey: settingsRow.litellm_api_key, model: settingsRow.litellm_model };
       if (!litellm.isRunning()) {
-        await litellm.start({ apiKey: settingsRow.litellm_api_key, model: settingsRow.litellm_model });
+        await litellm.start(cfg);
+      } else if (litellm.configChanged(cfg)) {
+        await litellm.restart(cfg);
       }
       const masterKey = litellm.getMasterKey();
       if (masterKey) {

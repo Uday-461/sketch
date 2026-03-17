@@ -117,6 +117,11 @@ export class LiteLLMManager {
     return this.process !== null;
   }
 
+  configChanged(config: LiteLLMConfig): boolean {
+    if (!this.currentConfig) return true;
+    return this.currentConfig.apiKey !== config.apiKey || this.currentConfig.model !== config.model;
+  }
+
   getMasterKey(): string | null {
     return this.masterKey;
   }
@@ -152,6 +157,7 @@ export class LiteLLMManager {
       "",
       "general_settings:",
       `  master_key: "${this.masterKey}"`,
+      "  allow_requests_on_db_unavailable: true",
       "",
     ].join("\n");
 
@@ -163,10 +169,14 @@ export class LiteLLMManager {
   private async waitForHealth(): Promise<void> {
     const deadline = Date.now() + 30_000;
     const url = `http://localhost:${this.port}/health`;
+    const headers: Record<string, string> = {};
+    if (this.masterKey) {
+      headers.Authorization = `Bearer ${this.masterKey}`;
+    }
 
     while (Date.now() < deadline) {
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, { headers });
         if (res.ok) return;
       } catch {
         // Not ready yet
