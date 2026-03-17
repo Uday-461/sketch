@@ -9,6 +9,32 @@ interface LiteLLMConfig {
   model: string;
 }
 
+interface ProviderMapping {
+  /** LiteLLM model prefix to use (replaces the original prefix) */
+  litellmPrefix: string;
+  /** api_base URL for the downstream provider */
+  apiBase: string;
+}
+
+/**
+ * Maps provider prefixes from the DB model string to LiteLLM config params.
+ *
+ * LiteLLM's /v1/messages passthrough doesn't strip provider-specific prefixes
+ * (openrouter/, together/, etc.) before forwarding. Using "openai/" + api_base
+ * forces LiteLLM to treat it as a generic OpenAI-compatible endpoint, which
+ * correctly strips the prefix on both /v1/chat/completions and /v1/messages.
+ */
+const PROVIDER_MAP: Record<string, ProviderMapping> = {
+  openrouter: {
+    litellmPrefix: "openai",
+    apiBase: "https://openrouter.ai/api/v1",
+  },
+  // Future providers — add here when needed:
+  // together: { litellmPrefix: "openai", apiBase: "https://api.together.xyz/v1" },
+  // groq: { litellmPrefix: "openai", apiBase: "https://api.groq.com/openai/v1" },
+  // deepseek: { litellmPrefix: "openai", apiBase: "https://api.deepseek.com/v1" },
+};
+
 interface LiteLLMManagerOptions {
   dataDir: string;
   port: number;
@@ -144,22 +170,45 @@ export class LiteLLMManager {
     });
   }
 
+  private resolveModel(model: string): { model: string; extraParams: string[] } {
+    const slashIndex = model.indexOf("/");
+    if (slashIndex === -1) {
+      return { model, extraParams: [] };
+    }
+
+    const prefix = model.slice(0, slashIndex);
+    const mapping = PROVIDER_MAP[prefix];
+    if (!mapping) {
+      return { model, extraParams: [] };
+    }
+
+    const downstream = model.slice(slashIndex + 1);
+    return {
+      model: `${mapping.litellmPrefix}/${downstream}`,
+      extraParams: [`      api_base: "${mapping.apiBase}"`],
+    };
+  }
+
   private async writeConfigYaml(config: LiteLLMConfig): Promise<string> {
     const dir = join(this.dataDir, "litellm");
     await mkdir(dir, { recursive: true });
 
-    const yaml = [
+    const resolved = this.resolveModel(config.model);
+
+    const lines = [
       "model_list:",
       '  - model_name: "claude-*"',
       "    litellm_params:",
-      `      model: "${config.model}"`,
+      `      model: "${resolved.model}"`,
       `      api_key: "${config.apiKey}"`,
+      ...resolved.extraParams,
       "",
       "general_settings:",
       `  master_key: "${this.masterKey}"`,
       "  allow_requests_on_db_unavailable: true",
       "",
-    ].join("\n");
+    ];
+    const yaml = lines.join("\n");
 
     const configPath = join(dir, "config.yaml");
     await writeFile(configPath, yaml, "utf-8");

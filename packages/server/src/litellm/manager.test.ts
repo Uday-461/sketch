@@ -94,7 +94,9 @@ describe("LiteLLMManager", () => {
 
     expect(mockWriteFile).toHaveBeenCalledOnce();
     const yamlContent = mockWriteFile.mock.calls[0]?.[1] as string;
-    expect(yamlContent).toContain('model: "openrouter/claude-sonnet"');
+    // openrouter/ prefix is resolved to openai/ with api_base for /v1/messages compatibility
+    expect(yamlContent).toContain('model: "openai/claude-sonnet"');
+    expect(yamlContent).toContain('api_base: "https://openrouter.ai/api/v1"');
     expect(yamlContent).toContain('api_key: "sk-test-key"');
     expect(yamlContent).toContain("master_key:");
     expect(yamlContent).toContain('model_name: "claude-*"');
@@ -102,6 +104,33 @@ describe("LiteLLMManager", () => {
     vi.restoreAllMocks();
 
     // Clean up
+    const stopPromise = manager.stop();
+    mainProc.emit("exit", 0, null);
+    await stopPromise;
+  });
+
+  it("passes through model as-is when prefix is not in provider map", async () => {
+    const mockSpawn = vi.mocked(spawn);
+    const mockWriteFile = vi.mocked(writeFile);
+
+    const versionProc = new EventEmitter() as ChildProcess;
+    mockSpawn.mockReturnValueOnce(versionProc);
+
+    const mainProc = createMockProcess();
+    mockSpawn.mockReturnValueOnce(mainProc);
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
+
+    const startPromise = manager.start({ apiKey: "sk-test-key", model: "anthropic/claude-sonnet-4.6" });
+    versionProc.emit("exit", 0, null);
+    await startPromise;
+
+    const yamlContent = mockWriteFile.mock.calls[0]?.[1] as string;
+    expect(yamlContent).toContain('model: "anthropic/claude-sonnet-4.6"');
+    expect(yamlContent).not.toContain("api_base:");
+
+    vi.restoreAllMocks();
+
     const stopPromise = manager.stop();
     mainProc.emit("exit", 0, null);
     await stopPromise;
