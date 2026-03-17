@@ -1,7 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { type AgentRunMessage, type AgentRunSummary, api } from "@/lib/api";
+import { type AgentRunMessage, type AgentRunStats, type AgentRunSummary, api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useDashboardAuth } from "@/routes/dashboard";
 import {
@@ -9,9 +10,11 @@ import {
   CaretRightIcon,
   ClockIcon,
   CurrencyDollarIcon,
+  DiscordLogoIcon,
   LightningIcon,
   SlackLogoIcon,
   SpinnerGapIcon,
+  TelegramLogoIcon,
   TimerIcon,
   UsersThreeIcon,
   WarningCircleIcon,
@@ -31,6 +34,21 @@ export const activityRoute = createRoute({
 const PAGE_SIZE = 25;
 const RUNS_QUERY_KEY = "agent-runs";
 const STATS_QUERY_KEY = "agent-runs-stats";
+
+const PLATFORMS = [
+  { value: "all", label: "All platforms" },
+  { value: "slack", label: "Slack" },
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "telegram", label: "Telegram" },
+  { value: "discord", label: "Discord" },
+];
+
+const DATE_PRESETS = [
+  { value: "all", label: "All time" },
+  { value: "1", label: "Today" },
+  { value: "7", label: "7 days" },
+  { value: "30", label: "30 days" },
+];
 
 function formatCost(value: number | null) {
   if (value == null || value === 0) return "$0.00";
@@ -65,6 +83,8 @@ function formatDateTime(value: string) {
 function PlatformIcon({ platform }: { platform: string }) {
   if (platform === "slack") return <SlackLogoIcon size={16} className="text-muted-foreground" />;
   if (platform === "whatsapp") return <WhatsappLogoIcon size={16} className="text-muted-foreground" />;
+  if (platform === "telegram") return <TelegramLogoIcon size={16} className="text-muted-foreground" />;
+  if (platform === "discord") return <DiscordLogoIcon size={16} className="text-muted-foreground" />;
   return <TimerIcon size={16} className="text-muted-foreground" />;
 }
 
@@ -79,15 +99,32 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function getDateFromPreset(days: string): string | undefined {
+  if (days === "all") return undefined;
+  return new Date(Date.now() - Number(days) * 86_400_000).toISOString();
+}
+
 export function ActivityPage() {
   const auth = useDashboardAuth();
   const isAdmin = auth.role === "admin";
   const [offset, setOffset] = useState(0);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [platformFilter, setPlatformFilter] = useState("all");
+  const [datePreset, setDatePreset] = useState("all");
+  const [userFilter, setUserFilter] = useState("all");
+
+  const dateFrom = getDateFromPreset(datePreset);
 
   const runsQuery = useQuery({
-    queryKey: [RUNS_QUERY_KEY, offset],
-    queryFn: () => api.agentRuns.list({ limit: PAGE_SIZE, offset }),
+    queryKey: [RUNS_QUERY_KEY, offset, platformFilter, datePreset, userFilter],
+    queryFn: () =>
+      api.agentRuns.list({
+        limit: PAGE_SIZE,
+        offset,
+        platform: platformFilter !== "all" ? platformFilter : undefined,
+        dateFrom,
+        userId: isAdmin && userFilter !== "all" ? userFilter : undefined,
+      }),
   });
 
   const statsQuery = useQuery({
@@ -101,6 +138,11 @@ export function ActivityPage() {
   const hasNext = offset + PAGE_SIZE < total;
   const hasPrev = offset > 0;
 
+  const handleFilterChange = (setter: (v: string) => void) => (value: string) => {
+    setter(value);
+    setOffset(0);
+  };
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
       <div>
@@ -112,7 +154,52 @@ export function ActivityPage() {
 
       {isAdmin && statsQuery.data ? <StatsCards stats={statsQuery.data} /> : null}
 
-      <div className="mt-6">
+      {/* Filter bar */}
+      <div className="mt-6 flex flex-wrap items-center gap-2">
+        <Select value={platformFilter} onValueChange={handleFilterChange(setPlatformFilter)}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PLATFORMS.map((p) => (
+              <SelectItem key={p.value} value={p.value}>
+                {p.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={datePreset} onValueChange={handleFilterChange(setDatePreset)}>
+          <SelectTrigger className="w-[130px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {DATE_PRESETS.map((d) => (
+              <SelectItem key={d.value} value={d.value}>
+                {d.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {isAdmin && statsQuery.data?.costByUser && statsQuery.data.costByUser.length > 0 ? (
+          <Select value={userFilter} onValueChange={handleFilterChange(setUserFilter)}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="All users" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All users</SelectItem>
+              {statsQuery.data.costByUser.map((u) => (
+                <SelectItem key={u.userId} value={u.userId}>
+                  {u.userName ?? u.userId.slice(0, 8)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
+      </div>
+
+      <div className="mt-4">
         {runsQuery.isLoading ? (
           <LoadingSkeleton />
         ) : runsQuery.isError ? (
@@ -169,19 +256,56 @@ export function ActivityPage() {
   );
 }
 
-function StatsCards({
-  stats,
-}: {
-  stats: { totalCost: number; totalRuns: number; errorCount: number; activeUsers: number };
-}) {
+function StatsCards({ stats }: { stats: AgentRunStats }) {
   const errorRate = stats.totalRuns > 0 ? ((stats.errorCount / stats.totalRuns) * 100).toFixed(1) : "0";
 
   return (
-    <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <StatCard icon={<CurrencyDollarIcon size={18} />} label="Total Cost (30d)" value={formatCost(stats.totalCost)} />
-      <StatCard icon={<LightningIcon size={18} />} label="Total Runs (30d)" value={String(stats.totalRuns)} />
-      <StatCard icon={<UsersThreeIcon size={18} />} label="Active Users (30d)" value={String(stats.activeUsers)} />
-      <StatCard icon={<WarningCircleIcon size={18} />} label="Error Rate (30d)" value={`${errorRate}%`} />
+    <div className="mt-6 space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          icon={<CurrencyDollarIcon size={18} />}
+          label="Total Cost (30d)"
+          value={formatCost(stats.totalCost)}
+        />
+        <StatCard icon={<LightningIcon size={18} />} label="Total Runs (30d)" value={String(stats.totalRuns)} />
+        <StatCard icon={<UsersThreeIcon size={18} />} label="Active Users (30d)" value={String(stats.activeUsers)} />
+        <StatCard icon={<WarningCircleIcon size={18} />} label="Error Rate (30d)" value={`${errorRate}%`} />
+      </div>
+
+      {stats.costByPlatform && stats.costByPlatform.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {stats.costByPlatform.map((p) => (
+            <div
+              key={p.platform}
+              className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs"
+            >
+              <PlatformIcon platform={p.platform} />
+              <span className="font-medium capitalize">{p.platform}</span>
+              <span className="text-muted-foreground">
+                {p.runs} runs &middot; {formatCost(p.cost)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {stats.costByUser && stats.costByUser.length > 0 ? (
+        <div className="rounded-lg border border-border bg-card">
+          <div className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Top users by cost (30d)
+          </div>
+          <div className="divide-y divide-border">
+            {stats.costByUser.slice(0, 5).map((u) => (
+              <div key={u.userId} className="flex items-center justify-between px-3 py-1.5 text-sm">
+                <span className="truncate">{u.userName ?? u.userId.slice(0, 12)}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {u.runs} runs &middot; {formatCost(u.cost)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -282,14 +406,52 @@ function RunDetail({ runId }: { runId: string }) {
 
   const { run, messages } = detailQuery.data;
 
+  const toolsUsed: string[] = run.toolsUsedJson ? JSON.parse(run.toolsUsedJson) : [];
+  const permissionDenials: unknown[] = run.permissionDenialsJson ? JSON.parse(run.permissionDenialsJson) : [];
+  const errors: unknown[] = run.errorsJson ? JSON.parse(run.errorsJson) : [];
+
   return (
     <div className="border-t border-border bg-muted/20 px-4 py-4">
       <dl className="mb-4 grid gap-3 text-sm sm:grid-cols-3">
         <DetailItem label="Session" value={run.sessionId.slice(0, 12)} />
         <DetailItem label="Cache read" value={formatTokens(run.cacheReadTokens)} />
+        <DetailItem label="Cache creation" value={formatTokens(run.cacheCreationTokens)} />
         <DetailItem label="API time" value={formatDuration(run.durationApiMs)} />
         {run.errorType ? <DetailItem label="Error type" value={run.errorType} /> : null}
       </dl>
+
+      {toolsUsed.length > 0 ? (
+        <div className="mb-3">
+          <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Tools used</p>
+          <div className="flex flex-wrap gap-1">
+            {toolsUsed.map((tool) => (
+              <Badge key={tool} variant="secondary" className="text-xs">
+                {tool}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {permissionDenials.length > 0 ? (
+        <div className="mb-3">
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Permission denials ({permissionDenials.length})
+          </p>
+          <pre className="max-h-32 overflow-auto rounded border border-border bg-card p-2 text-xs">
+            {JSON.stringify(permissionDenials, null, 2)}
+          </pre>
+        </div>
+      ) : null}
+
+      {errors.length > 0 ? (
+        <div className="mb-3">
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Errors</p>
+          <pre className="max-h-32 overflow-auto rounded border border-destructive/30 bg-destructive/5 p-2 text-xs">
+            {JSON.stringify(errors, null, 2)}
+          </pre>
+        </div>
+      ) : null}
 
       {messages.length > 0 ? (
         <div className="space-y-2">
@@ -335,7 +497,14 @@ function TranscriptMessage({ message }: { message: AgentRunMessage }) {
       )}
     >
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-xs font-medium uppercase text-muted-foreground">{message.role}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium uppercase text-muted-foreground">{message.role}</span>
+          {message.toolName ? (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+              {message.toolName}
+            </Badge>
+          ) : null}
+        </div>
         {message.inputTokens != null || message.outputTokens != null ? (
           <span className="text-xs text-muted-foreground">
             {formatTokens(message.inputTokens)}in / {formatTokens(message.outputTokens)}out

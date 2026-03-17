@@ -134,6 +134,8 @@ export interface AgentRunStats {
   totalRuns: number;
   errorCount: number;
   activeUsers: number;
+  costByPlatform?: { platform: string; cost: number; runs: number }[];
+  costByUser?: { userId: string; userName: string | null; cost: number; runs: number }[];
 }
 
 export interface AgentRunDetail extends AgentRunSummary {
@@ -465,11 +467,21 @@ export const api = {
     },
   },
   agentRuns: {
-    async list(filters?: { limit?: number; offset?: number; platform?: string }) {
+    async list(filters?: {
+      limit?: number;
+      offset?: number;
+      platform?: string;
+      userId?: string;
+      dateFrom?: string;
+      dateTo?: string;
+    }) {
       const params = new URLSearchParams();
       if (filters?.limit) params.set("limit", String(filters.limit));
       if (filters?.offset) params.set("offset", String(filters.offset));
       if (filters?.platform) params.set("platform", filters.platform);
+      if (filters?.userId) params.set("userId", filters.userId);
+      if (filters?.dateFrom) params.set("dateFrom", filters.dateFrom);
+      if (filters?.dateTo) params.set("dateTo", filters.dateTo);
       const qs = params.toString();
       return request<{ runs: AgentRunSummary[]; total: number }>(`/api/agent-runs${qs ? `?${qs}` : ""}`);
     },

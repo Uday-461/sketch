@@ -17,17 +17,32 @@ export function agentRunRoutes(db: Kysely<DB>) {
     const limit = Math.min(Number(c.req.query("limit") ?? 50), 100);
     const offset = Number(c.req.query("offset") ?? 0);
     const platform = c.req.query("platform");
+    const dateFrom = c.req.query("dateFrom");
+    const dateTo = c.req.query("dateTo");
+    const userIdParam = c.req.query("userId");
 
-    const filters: { userId?: string; platform?: string; limit: number; offset: number } = {
-      limit,
-      offset,
-    };
+    const filters: {
+      userId?: string;
+      platform?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      limit: number;
+      offset: number;
+    } = { limit, offset };
 
     if (role !== "admin") {
       filters.userId = sub;
+    } else if (userIdParam) {
+      filters.userId = userIdParam;
     }
     if (platform) {
       filters.platform = platform;
+    }
+    if (dateFrom) {
+      filters.dateFrom = dateFrom;
+    }
+    if (dateTo) {
+      filters.dateTo = dateTo;
     }
 
     const { runs, total } = await repo.listRuns(filters);
@@ -63,11 +78,20 @@ export function agentRunRoutes(db: Kysely<DB>) {
     const days = Number(c.req.query("days") ?? 30);
     const stats = await repo.getStats(days);
 
+    const costByUserWithNames = await Promise.all(
+      stats.costByUser.map(async (entry) => {
+        const user = await users.findById(entry.userId);
+        return { ...entry, userName: user?.name ?? null };
+      }),
+    );
+
     return c.json({
       totalCost: stats.totalCost,
       totalRuns: stats.totalRuns,
       errorCount: stats.errorCount,
       activeUsers: stats.activeUserIds.length,
+      costByPlatform: stats.costByPlatform,
+      costByUser: costByUserWithNames,
     });
   });
 
@@ -81,7 +105,7 @@ export function agentRunRoutes(db: Kysely<DB>) {
       return c.json({ error: { code: "NOT_FOUND", message: "Agent run not found" } }, 404);
     }
 
-    if (role !== "admin" && run.user_id !== sub) {
+    if (role !== "admin" && run.user_id !== null && run.user_id !== sub) {
       return c.json({ error: { code: "FORBIDDEN", message: "You do not have access to this run" } }, 403);
     }
 

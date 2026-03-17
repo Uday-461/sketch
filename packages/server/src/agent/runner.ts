@@ -194,7 +194,9 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
   const runId = randomUUID();
   let model: string | null = null;
   let toolsUsed: string[] = [];
-  const transcript: Array<{ role: string; content: unknown; usage?: unknown }> = [];
+  const transcript: Array<{ role: string; content: unknown; usage?: unknown }> = [
+    { role: "user", content: params.userMessage },
+  ];
   let resultMessage: Record<string, unknown> | null = null;
 
   for await (const message of run) {
@@ -320,17 +322,30 @@ async function saveAgentRun(
 
   await repo.insertRun(data.run);
 
-  const messages = data.transcript.map((entry, index) => ({
-    id: randomUUID(),
-    run_id: data.run.id,
-    sequence: index,
-    role: entry.role,
-    content_json: JSON.stringify(entry.content),
-    tool_use_id: null,
-    tool_name: null,
-    input_tokens: (entry.usage as Record<string, number> | undefined)?.input_tokens ?? null,
-    output_tokens: (entry.usage as Record<string, number> | undefined)?.output_tokens ?? null,
-  }));
+  const messages = data.transcript.map((entry, index) => {
+    let toolUseId: string | null = null;
+    let toolName: string | null = null;
+
+    if (entry.role === "assistant" && Array.isArray(entry.content)) {
+      const toolBlock = (entry.content as Array<Record<string, unknown>>).find((b) => b.type === "tool_use");
+      if (toolBlock) {
+        toolUseId = (toolBlock.id as string) ?? null;
+        toolName = (toolBlock.name as string) ?? null;
+      }
+    }
+
+    return {
+      id: randomUUID(),
+      run_id: data.run.id,
+      sequence: index,
+      role: entry.role,
+      content_json: JSON.stringify(entry.content),
+      tool_use_id: toolUseId,
+      tool_name: toolName,
+      input_tokens: (entry.usage as Record<string, number> | undefined)?.input_tokens ?? null,
+      output_tokens: (entry.usage as Record<string, number> | undefined)?.output_tokens ?? null,
+    };
+  });
 
   await repo.insertMessages(messages);
 }
