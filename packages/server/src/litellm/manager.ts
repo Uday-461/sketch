@@ -36,9 +36,13 @@ const PROVIDER_MAP: Record<string, ProviderMapping> = {
 };
 
 /**
- * Maps provider prefixes to per-tier downstream model IDs.
- * When a preset exists, writeConfigYaml() generates 4 entries (haiku/sonnet/opus/catch-all)
+ * Maps model path patterns to per-tier downstream model IDs.
+ * Keys are "provider/family" prefixes matched against the admin's configured model string.
+ * When a preset matches, writeConfigYaml() generates 4 entries (haiku/sonnet/opus/catch-all)
  * instead of a single catch-all, enabling the SDK's multi-model cost optimization.
+ *
+ * To add a new model family: add a "provider/family" key with tier mappings.
+ * The tier values are downstream model paths (without the provider prefix).
  */
 interface ProviderPreset {
   haiku: string;
@@ -47,10 +51,15 @@ interface ProviderPreset {
 }
 
 const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
-  openrouter: {
+  "openrouter/anthropic": {
     haiku: "anthropic/claude-haiku-4-5",
     sonnet: "anthropic/claude-sonnet-4.6",
     opus: "anthropic/claude-opus-4.6",
+  },
+  "openrouter/qwen": {
+    haiku: "qwen/qwen-turbo",
+    sonnet: "qwen/qwen-plus",
+    opus: "qwen/qwen-max",
   },
 };
 
@@ -225,10 +234,17 @@ export class LiteLLMManager {
     };
   }
 
-  private deriveModelTiers(model: string): ProviderPreset | null {
-    const slashIndex = model.indexOf("/");
-    if (slashIndex === -1) return null;
-    return PROVIDER_PRESETS[model.slice(0, slashIndex)] ?? null;
+  private deriveModelTiers(model: string): { preset: ProviderPreset; provider: string } | null {
+    // Match against progressively shorter path prefixes:
+    // "openrouter/anthropic/claude-sonnet-4.6" → try "openrouter/anthropic/claude-sonnet-4.6",
+    // then "openrouter/anthropic", then "openrouter"
+    const parts = model.split("/");
+    for (let i = parts.length - 1; i >= 1; i--) {
+      const key = parts.slice(0, i).join("/");
+      const preset = PROVIDER_PRESETS[key];
+      if (preset) return { preset, provider: parts[0] };
+    }
+    return null;
   }
 
   private buildModelEntry(modelName: string, fullModel: string, apiKey: string): string[] {
@@ -246,16 +262,16 @@ export class LiteLLMManager {
     const dir = join(this.dataDir, "litellm");
     await mkdir(dir, { recursive: true });
 
-    const tiers = this.deriveModelTiers(config.model);
-    const prefix = config.model.indexOf("/") !== -1 ? config.model.slice(0, config.model.indexOf("/")) : null;
+    const result = this.deriveModelTiers(config.model);
 
     const lines = ["model_list:"];
 
-    if (tiers && prefix) {
-      lines.push(...this.buildModelEntry("claude-haiku-*", `${prefix}/${tiers.haiku}`, config.apiKey));
-      lines.push(...this.buildModelEntry("claude-sonnet-*", `${prefix}/${tiers.sonnet}`, config.apiKey));
-      lines.push(...this.buildModelEntry("claude-opus-*", `${prefix}/${tiers.opus}`, config.apiKey));
-      lines.push(...this.buildModelEntry("claude-*", `${prefix}/${tiers.sonnet}`, config.apiKey));
+    if (result) {
+      const { preset, provider } = result;
+      lines.push(...this.buildModelEntry("claude-haiku-*", `${provider}/${preset.haiku}`, config.apiKey));
+      lines.push(...this.buildModelEntry("claude-sonnet-*", `${provider}/${preset.sonnet}`, config.apiKey));
+      lines.push(...this.buildModelEntry("claude-opus-*", `${provider}/${preset.opus}`, config.apiKey));
+      lines.push(...this.buildModelEntry("claude-*", `${provider}/${preset.sonnet}`, config.apiKey));
     } else {
       lines.push(...this.buildModelEntry("claude-*", config.model, config.apiKey));
     }

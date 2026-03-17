@@ -140,6 +140,44 @@ describe("LiteLLMManager", () => {
     await stopPromise;
   });
 
+  it("generates multi-tier config yaml for qwen model via openrouter", async () => {
+    const mockSpawn = vi.mocked(spawn);
+    const mockWriteFile = vi.mocked(writeFile);
+
+    const versionProc = new EventEmitter() as ChildProcess;
+    mockSpawn.mockReturnValueOnce(versionProc);
+
+    const mainProc = createMockProcess();
+    mockSpawn.mockReturnValueOnce(mainProc);
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok", { status: 200 }));
+
+    const startPromise = manager.start({ apiKey: "sk-test-key", model: "openrouter/qwen/qwen-plus" });
+    versionProc.emit("exit", 0, null);
+    await startPromise;
+
+    expect(mockWriteFile).toHaveBeenCalledOnce();
+    const yamlContent = mockWriteFile.mock.calls[0]?.[1] as string;
+
+    // Should have 4 model entries with Qwen downstream models
+    expect(yamlContent).toContain('model_name: "claude-haiku-*"');
+    expect(yamlContent).toContain('model_name: "claude-sonnet-*"');
+    expect(yamlContent).toContain('model_name: "claude-opus-*"');
+    expect(yamlContent).toContain('model_name: "claude-*"');
+
+    // Qwen models routed through openai/ prefix with OpenRouter api_base
+    expect(yamlContent).toContain('model: "openai/qwen/qwen-turbo"');
+    expect(yamlContent).toContain('model: "openai/qwen/qwen-plus"');
+    expect(yamlContent).toContain('model: "openai/qwen/qwen-max"');
+    expect(yamlContent).toContain('api_base: "https://openrouter.ai/api/v1"');
+
+    vi.restoreAllMocks();
+
+    const stopPromise = manager.stop();
+    mainProc.emit("exit", 0, null);
+    await stopPromise;
+  });
+
   it("generates single entry for bare model name without slash", async () => {
     const mockSpawn = vi.mocked(spawn);
     const mockWriteFile = vi.mocked(writeFile);
